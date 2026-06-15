@@ -10,7 +10,7 @@ Follow all rules in <rules>
 Use the <examples> so you know what a good title looks like.
 Your output must be:
 - A single line
-- ≤50 characters
+- ≤70 characters
 - No explanations
 </task>
 
