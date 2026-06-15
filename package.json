@@ -12,7 +12,9 @@
     "access": "public"
   },
   "files": [
-    "src"
+    "src",
+    "assets/config.schema.json",
+    "README.md"
   ],
   "repository": {
     "type": "git",
