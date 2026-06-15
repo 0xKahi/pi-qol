@@ -54,9 +54,9 @@ them (project overrides global):
   "auto_session_name": {
     "enabled": true,
     "model": {
-      "provider": "anthropic",
-      "modelId": "claude-3-5-haiku-latest",
-      "reasoning": "minimal"
+      "provider": "opencode",
+      "modelId": "gpt-5-nano",
+      "reasoning": "low"
     }
   }
 }
