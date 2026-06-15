@@ -1,14 +1,11 @@
 import z from 'zod';
 import { ModelConfigschema } from './shared-config.schema';
 
-const AutoSessionNameEnabledSchema = z.object({
-  enabled: z.literal(true),
-  model: ModelConfigschema,
-});
-
-const AutoSessionNameDisabledSchema = z.object({
-  enabled: z.literal(false),
+export const AutoSessionNameConfigSchema = z.object({
+  enabled: z.boolean().default(false),
   model: ModelConfigschema.optional(),
 });
+export type AutoSessionNameConfig = z.infer<typeof AutoSessionNameConfigSchema>;
 
-export const AutoSessionNameConfigSchema = z.union([AutoSessionNameEnabledSchema, AutoSessionNameDisabledSchema]);
+export const PartialAutoSessionNameConfigSchema = AutoSessionNameConfigSchema.partial();
+export type PartialAutoSessionNameConfig = z.infer<typeof PartialAutoSessionNameConfigSchema>;
