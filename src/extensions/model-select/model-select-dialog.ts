@@ -30,6 +30,10 @@ export class ModelSelectDialog implements Component, Focusable {
     private readonly options: DialogOptions,
   ) {
     this.activeSection = options.initialSearch || !options.hasFavouriteSection ? 'search' : 'favourites';
+    const currentFavouriteIndex = options.currentModel
+      ? options.favouriteItems.findIndex(item => modelsAreEqual(item.model, options.currentModel))
+      : -1;
+    this.selectedFavouriteIndex = currentFavouriteIndex >= 0 ? currentFavouriteIndex : 0;
     this.searchInput.setValue(options.initialSearch);
     this.searchInput.onSubmit = () => this.selectCurrentSearchItem();
     this.searchInput.onEscape = () => this.options.onDone(null);
