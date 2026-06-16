@@ -11,10 +11,6 @@ export class ConfigLoader {
     return ConfigSchema.parse({});
   }
 
-  getConfig(): Config {
-    return this.config;
-  }
-
   isEnabled(key: keyof Config): boolean {
     const section = this.config[key];
     return typeof section === 'object' && section !== null && 'enabled' in section ? Boolean((section as { enabled?: boolean }).enabled) : false;
@@ -22,6 +18,10 @@ export class ConfigLoader {
 
   getAutoSessionName(): Config['auto_session_name'] {
     return this.config.auto_session_name;
+  }
+
+  getModelSelect(): Config['model_select'] {
+    return this.config.model_select;
   }
 
   initializeConfig(ctx: ExtensionContext): { success: boolean; error?: string } {

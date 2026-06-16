@@ -66,7 +66,7 @@ export function registerAutoSessionName(pi: ExtensionAPI, deps: { config: Config
         return;
       }
 
-      ctx.ui.notify(`(pi-qol) auto_session_name: ${result.text}  `, 'info');
+      ctx.ui.notify(`(pi-qol) session renamed  : ${result.text}  `, 'info');
     })().catch(err => {
       ctx.ui.notify(`(pi-qol) auto_session_name: ${JSON.stringify(err)}`, 'error');
     });

@@ -3,8 +3,19 @@
 > Quality-of-life extensions for [pi](https://github.com/earendil-works/pi).
 
 A small collection of opt-in extensions that smooth out everyday pi usage. Today
-it ships **`auto_session_name`** — automatic, opencode-style session titling — with
-more QoL features planned.
+it ships **`auto_session_name`** — automatic, opencode-style session titling — and
+**`model_select`** — an interactive model picker.
+
+## Installation
+
+Install the package from npm:
+
+```bash
+pi install npm:@0xkahi/pi-qol
+```
+
+Then register it in your pi configuration so pi loads `./src/index.ts` as an
+extension (see the `pi.extensions` field in `package.json`).
 
 ## Features
 
@@ -23,16 +34,16 @@ never blocks your turn.
 - **Safe output** — strips `<think>` blocks, unwraps quotes, and truncates titles
   to 100 characters.
 
-## Installation
+### `model_select`
 
-Install the package from npm:
+Adds `/select-model`, an interactive model picker with fuzzy search, optional favourites,
+provider filtering, and inline or overlay layouts,
 
-```bash
-pi install npm:@0xkahi/pi-qol
-```
+- **quick access** to listed favourite models
+- **filtering** specified providers from model search 
 
-Then register it in your pi configuration so pi loads `./src/index.ts` as an
-extension (see the `pi.extensions` field in `package.json`).
+allow keybindings with [pi-vim-keys](https://github.com/0xKahi/pi-vim-keys) with eventId of `pi.vimKeys.event:pi-qol.model_select`
+
 
 ## Configuration
 
@@ -43,6 +54,7 @@ them (project overrides global):
 | ------- | ---------------------------------------------------------- |
 | Global  | `<agent-dir>/extensions/pi-qol/config.json`                |
 | Project | `<cwd>/.pi/extensions/pi-qol/config.json` (trusted projects only) |
+
 
 > Project config is only loaded when the project is trusted.
 
@@ -58,6 +70,12 @@ them (project overrides global):
       "modelId": "gpt-5-nano",
       "reasoning": "low"
     }
+  },
+  "model_select": {
+    "enabled": true,
+    "layout": "overlay",
+    "provider_filter": ["anthropic", "openai"],
+    "favourite": [{ "provider": "anthropic", "modelId": "claude-sonnet-4-5" }]
   }
 }
 ```
@@ -83,6 +101,18 @@ them (project overrides global):
 
 When `model` is set but cannot be found or authenticated, `pi-qol` automatically
 falls back to the active session model and surfaces a warning notification.
+
+#### `model_select`
+
+| Key               | Type      | Default  | Description                                               |
+| ----------------- | --------- | -------- | --------------------------------------------------------- |
+| `enabled`         | `boolean` | `false`  | Turn the model picker on.                                 |
+| `layout`          | `enum`    | `inline` | Picker layout: `inline` or `overlay`.                     |
+| `provider_filter` | `string[]`| `[]`     | Restrict searchable models to these providers.            |
+| `favourite`       | `object[]`| `[]`     | Favourite models shown in a separate tab (`provider`, `modelId`). |
+
+Project config shallow-merges each top-level section over global config. If project
+config sets `model_select.favourite`, it replaces the global favourites array.
 
 ## How it works
 
