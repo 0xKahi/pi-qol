@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/0xKahi/pi-qol/main/assets/config.schema.json",
-  "title": "Pi Btw Extension Configuration",
+  "title": "Pi Quality of Life Extensions Configuration",
   "description": "Configuration schema for pi-qol extension",
   "type": "object",
   "properties": {
@@ -51,10 +51,69 @@
         "enabled"
       ],
       "additionalProperties": false
+    },
+    "model_select": {
+      "default": {
+        "enabled": false,
+        "favourite": [],
+        "provider_filter": [],
+        "layout": "inline"
+      },
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "favourite": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string"
+              },
+              "modelId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "provider",
+              "modelId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "provider_filter": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "layout": {
+          "default": "inline",
+          "type": "string",
+          "enum": [
+            "inline",
+            "overlay"
+          ]
+        }
+      },
+      "required": [
+        "enabled",
+        "favourite",
+        "provider_filter",
+        "layout"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [
-    "auto_session_name"
+    "auto_session_name",
+    "model_select"
   ],
   "additionalProperties": false
 }

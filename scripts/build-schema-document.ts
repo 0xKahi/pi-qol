@@ -10,7 +10,7 @@ export function createConfigJsonSchema(): Record<string, unknown> {
   return {
     $schema: 'http://json-schema.org/draft-07/schema#',
     $id: 'https://raw.githubusercontent.com/0xKahi/pi-qol/main/assets/config.schema.json',
-    title: 'Pi Btw Extension Configuration',
+    title: 'Pi Quality of Life Extensions Configuration',
     description: 'Configuration schema for pi-qol extension',
     ...jsonSchema,
   };

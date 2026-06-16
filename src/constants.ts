@@ -1,1 +1,18 @@
+import type { ObjectValues } from './types';
+
 export const EXTENSION_ID = 'pi-qol';
+
+const SUB_EXTENSION_IDS = {
+  auto_session_name: 'auto_session_name',
+  model_select: 'model_select',
+} as const;
+
+export type SubExtentionIds = ObjectValues<typeof SUB_EXTENSION_IDS>;
+
+export const piVimKeyEventId = (type: SubExtentionIds, extra: string[] = []) => {
+  let id = `pi.vimKeys.event:${EXTENSION_ID}.${type}`;
+  extra.forEach(val => {
+    id = `${id}.${val}`;
+  });
+  return id;
+};
