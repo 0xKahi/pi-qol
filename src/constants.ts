@@ -5,6 +5,7 @@ export const EXTENSION_ID = 'pi-qol';
 const SUB_EXTENSION_IDS = {
   auto_session_name: 'auto_session_name',
   model_select: 'model_select',
+  custom_footer: 'custom_footer',
 } as const;
 
 export type SubExtentionIds = ObjectValues<typeof SUB_EXTENSION_IDS>;
@@ -16,3 +17,5 @@ export const piVimKeyEventId = (type: SubExtentionIds, extra: string[] = []) => 
   });
   return id;
 };
+
+export const COLOR_HEX_REGEX = /^#[0-9a-fA-F]{6}$/;

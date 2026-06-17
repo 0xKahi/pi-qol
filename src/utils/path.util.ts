@@ -31,6 +31,10 @@ export class PathUtil {
     }
   }
 
+  static findPiAuthConfig(): FileSearchResult {
+    return PathUtil.findFile(path.join(getAgentDir(), 'auth.json'));
+  }
+
   private static getExtensionConfig(paths: string[]): string {
     return path.join(...paths, 'extensions', EXTENSION_ID, 'config.json');
   }
