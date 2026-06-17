@@ -21,10 +21,44 @@ const CustomFooterDisplaySchema = z.object({
   cache: z.boolean().optional().default(true),
 });
 
+const DEFAULT_CUSTOM_FOOTER_COLORS = CustomFooterColorsSchema.parse({});
+const DEFAULT_CUSTOM_FOOTER_ICONS = CustomFooterIconsSchema.parse({});
+const DEFAULT_CUSTOM_FOOTER_DISPLAY = CustomFooterDisplaySchema.parse({});
+
 export const CustomFooterConfigSchema = z.object({
   enabled: z.boolean().default(false),
-  colors: CustomFooterColorsSchema.optional(),
-  icons: CustomFooterIconsSchema.optional(),
-  display: CustomFooterDisplaySchema.optional(),
+  colors: CustomFooterColorsSchema.default(DEFAULT_CUSTOM_FOOTER_COLORS),
+  icons: CustomFooterIconsSchema.default(DEFAULT_CUSTOM_FOOTER_ICONS),
+  display: CustomFooterDisplaySchema.default(DEFAULT_CUSTOM_FOOTER_DISPLAY),
 });
 export type CustomFooterConfig = z.infer<typeof CustomFooterConfigSchema>;
+
+export const DEFAULT_CUSTOM_FOOTER_CONFIG = CustomFooterConfigSchema.parse({ enabled: false });
+
+export const PartialCustomFooterConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  colors: z
+    .object({
+      directory: ColorHexSchema.optional(),
+      modelName: ColorHexSchema.optional(),
+      anthropicUsage: ColorHexSchema.optional(),
+      codexUsage: ColorHexSchema.optional(),
+    })
+    .optional(),
+  icons: z
+    .object({
+      directory: z.string().optional(),
+      refresh: z.string().optional(),
+      cache: z.string().optional(),
+      cacheRead: z.string().optional(),
+      cacheWrite: z.string().optional(),
+    })
+    .optional(),
+  display: z
+    .object({
+      tokens: z.boolean().optional(),
+      cache: z.boolean().optional(),
+    })
+    .optional(),
+});
+export type PartialCustomFooterConfig = z.infer<typeof PartialCustomFooterConfigSchema>;

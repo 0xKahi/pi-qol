@@ -24,6 +24,10 @@ export class ConfigLoader {
     return this.config.model_select;
   }
 
+  getCustomFooter(): Config['custom_footer'] {
+    return this.config.custom_footer;
+  }
+
   initializeConfig(ctx: ExtensionContext): { success: boolean; error?: string } {
     let merged: Config = this.defaultConfig;
 

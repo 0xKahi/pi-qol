@@ -3,8 +3,9 @@
 > Quality-of-life extensions for [pi](https://github.com/earendil-works/pi).
 
 A small collection of opt-in extensions that smooth out everyday pi usage. Today
-it ships **`auto_session_name`** — automatic, opencode-style session titling — and
-**`model_select`** — an interactive model picker.
+it ships **`auto_session_name`** — automatic, opencode-style session titling,
+**`model_select`** — an interactive model picker, and **`custom_footer`** — a
+compact configurable interactive footer.
 
 ## Installation
 
@@ -44,6 +45,26 @@ provider filtering, and inline or overlay layouts,
 
 allow keybindings with [pi-vim-keys](https://github.com/0xKahi/pi-vim-keys) with eventId of `pi.vimKeys.event:pi-qol.model_select`
 
+### `custom_footer`
+
+Replaces pi's built-in interactive footer with the same three-line layout, but
+shows the current directory as an icon plus basename, supports hex color overrides,
+can hide token/cache clusters, and adds an OAuth subscription-usage progress bar
+for supported providers (Anthropic and OpenAI Codex).
+
+- **Directory line** — directory icon + basename, with optional git branch and
+  session name.
+- **Stats line** — cumulative input/output tokens, cache read/write/hit cluster,
+  session cost (or `(sub)` when on a subscription), context-window usage, and the
+  right-aligned model name (with provider prefix when multiple providers are
+  available).
+- **Subscription usage** — a colored progress bar plus percentage and reset time
+  for the active OAuth provider. Usage is fetched lazily and cached, refreshing
+  at most once every 60 seconds per provider; auth/network failures simply hide
+  the segment.
+
+Known difference from pi's built-in footer: the `(auto)` compaction suffix is
+omitted because extensions do not expose reliable live state for it.
 
 ## Configuration
 
@@ -76,6 +97,17 @@ them (project overrides global):
     "layout": "overlay",
     "provider_filter": ["anthropic", "openai"],
     "favourite": [{ "provider": "anthropic", "modelId": "claude-sonnet-4-5" }]
+  },
+  "custom_footer": {
+    "enabled": true,
+    "colors": {
+      "directory": "#A78BFA",
+      "modelName": "#60A5FA"
+    },
+    "display": {
+      "tokens": true,
+      "cache": true
+    }
   }
 }
 ```
@@ -110,6 +142,23 @@ falls back to the active session model and surfaces a warning notification.
 | `layout`          | `enum`    | `inline` | Picker layout: `inline` or `overlay`.                     |
 | `provider_filter` | `string[]`| `[]`     | Restrict searchable models to these providers.            |
 | `favourite`       | `object[]`| `[]`     | Favourite models shown in a separate tab (`provider`, `modelId`). |
+
+#### `custom_footer`
+
+| Key                         | Type      | Default   | Description                                      |
+| --------------------------- | --------- | --------- | ------------------------------------------------ |
+| `enabled`                   | `boolean` | `false`   | Replace pi's built-in interactive footer.        |
+| `display.tokens`            | `boolean` | `true`    | Show cumulative input/output token counts.       |
+| `display.cache`             | `boolean` | `true`    | Show the custom cache read/write/hit cluster.    |
+| `colors.directory`          | `hex`     | —         | Color the directory icon and basename.           |
+| `colors.modelName`          | `hex`     | —         | Color the right-aligned model name.              |
+| `colors.anthropicUsage`     | `hex`     | `#D97706` | Color the Claude subscription usage segment (bar + percentage). |
+| `colors.codexUsage`         | `hex`     | `#10B981` | Color the Codex subscription usage segment (bar + percentage).  |
+| `icons.directory`           | `string`  | nerd font | Glyph shown before the directory basename.       |
+| `icons.cache`               | `string`  | nerd font | Glyph for the cache cluster.                     |
+| `icons.cacheRead`           | `string`  | nerd font | Glyph for cache-read tokens.                     |
+| `icons.cacheWrite`          | `string`  | nerd font | Glyph for cache-write tokens.                    |
+| `icons.refresh`             | `string`  | nerd font | Glyph shown before the subscription reset time.  |
 
 Project config shallow-merges each top-level section over global config. If project
 config sets `model_select.favourite`, it replaces the global favourites array.
@@ -152,6 +201,8 @@ src/
   utils/                         # path + model-resolution helpers
   extensions/
     auto-session-name/           # the auto_session_name feature
+    model-select/                # the model_select feature
+    custom-footer/               # the custom_footer feature
 scripts/                         # JSON schema generation
 assets/config.schema.json        # generated config schema
 ```

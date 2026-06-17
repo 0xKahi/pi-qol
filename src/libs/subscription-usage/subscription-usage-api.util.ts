@@ -7,7 +7,7 @@ export type ProviderAuth = {
   accountId?: string;
 };
 
-type SubscriptionProvider = 'anthropic' | 'openai-codex';
+export type SubscriptionProvider = 'anthropic' | 'openai-codex';
 type SubscriptionAuthconfig = Partial<Record<SubscriptionProvider, Record<string, unknown>>>;
 
 export type RateWindow = {
@@ -16,7 +16,7 @@ export type RateWindow = {
   resetAt?: Date;
 };
 
-type FetchUsageResponse = {
+export type FetchUsageResponse = {
   label: string;
   rateWindow: RateWindow[];
 };

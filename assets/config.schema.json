@@ -109,11 +109,140 @@
         "layout"
       ],
       "additionalProperties": false
+    },
+    "custom_footer": {
+      "default": {
+        "enabled": false,
+        "colors": {
+          "anthropicUsage": "#D97706",
+          "codexUsage": "#10B981"
+        },
+        "icons": {
+          "directory": " ",
+          "refresh": "",
+          "cache": " ",
+          "cacheRead": " ",
+          "cacheWrite": " "
+        },
+        "display": {
+          "tokens": true,
+          "cache": true
+        }
+      },
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "colors": {
+          "default": {
+            "anthropicUsage": "#D97706",
+            "codexUsage": "#10B981"
+          },
+          "type": "object",
+          "properties": {
+            "directory": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "modelName": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "anthropicUsage": {
+              "default": "#D97706",
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "codexUsage": {
+              "default": "#10B981",
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            }
+          },
+          "required": [
+            "anthropicUsage",
+            "codexUsage"
+          ],
+          "additionalProperties": false
+        },
+        "icons": {
+          "default": {
+            "directory": " ",
+            "refresh": "",
+            "cache": " ",
+            "cacheRead": " ",
+            "cacheWrite": " "
+          },
+          "type": "object",
+          "properties": {
+            "directory": {
+              "default": " ",
+              "type": "string"
+            },
+            "refresh": {
+              "default": "",
+              "type": "string"
+            },
+            "cache": {
+              "default": " ",
+              "type": "string"
+            },
+            "cacheRead": {
+              "default": " ",
+              "type": "string"
+            },
+            "cacheWrite": {
+              "default": " ",
+              "type": "string"
+            }
+          },
+          "required": [
+            "directory",
+            "refresh",
+            "cache",
+            "cacheRead",
+            "cacheWrite"
+          ],
+          "additionalProperties": false
+        },
+        "display": {
+          "default": {
+            "tokens": true,
+            "cache": true
+          },
+          "type": "object",
+          "properties": {
+            "tokens": {
+              "default": true,
+              "type": "boolean"
+            },
+            "cache": {
+              "default": true,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "tokens",
+            "cache"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "enabled",
+        "colors",
+        "icons",
+        "display"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [
     "auto_session_name",
-    "model_select"
+    "model_select",
+    "custom_footer"
   ],
   "additionalProperties": false
 }
