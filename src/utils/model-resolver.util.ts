@@ -7,6 +7,7 @@ export type ResolvedModel = {
   apiKey?: string;
   headers?: Record<string, string>;
   reasoning?: ModelConfig['reasoning'];
+  isOauth?: boolean;
 };
 
 export type ResolveModelResult = {
@@ -50,6 +51,7 @@ export class ModelResolver {
             apiKey: auth.apiKey,
             headers: auth.headers,
             reasoning: candidate.reasoning,
+            isOauth: this.ctx.modelRegistry.isUsingOAuth(model),
           },
         };
       }

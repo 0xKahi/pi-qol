@@ -16,3 +16,5 @@ export const piVimKeyEventId = (type: SubExtentionIds, extra: string[] = []) => 
   });
   return id;
 };
+
+export const COLOR_HEX_REGEX = /^#[0-9a-fA-F]{6}$/;
