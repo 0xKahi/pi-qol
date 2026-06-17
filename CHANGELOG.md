@@ -1,5 +1,11 @@
 # @0xkahi/pi-qol
 
+## 0.0.3
+
+### Patch Changes
+
+- 8d098bb: added custom-footer extension
+
 ## 0.0.2
 
 ### Patch Changes
