@@ -43,14 +43,9 @@
             "provider",
             "modelId",
             "reasoning"
-          ],
-          "additionalProperties": false
+          ]
         }
-      },
-      "required": [
-        "enabled"
-      ],
-      "additionalProperties": false
+      }
     },
     "model_select": {
       "default": {
@@ -81,8 +76,7 @@
             "required": [
               "provider",
               "modelId"
-            ],
-            "additionalProperties": false
+            ]
           }
         },
         "provider_filter": {
@@ -101,14 +95,7 @@
             "overlay"
           ]
         }
-      },
-      "required": [
-        "enabled",
-        "favourite",
-        "provider_filter",
-        "layout"
-      ],
-      "additionalProperties": false
+      }
     },
     "custom_footer": {
       "default": {
@@ -160,12 +147,7 @@
               "type": "string",
               "pattern": "^#[0-9a-fA-F]{6}$"
             }
-          },
-          "required": [
-            "anthropicUsage",
-            "codexUsage"
-          ],
-          "additionalProperties": false
+          }
         },
         "icons": {
           "default": {
@@ -197,15 +179,7 @@
               "default": " ",
               "type": "string"
             }
-          },
-          "required": [
-            "directory",
-            "refresh",
-            "cache",
-            "cacheRead",
-            "cacheWrite"
-          ],
-          "additionalProperties": false
+          }
         },
         "display": {
           "default": {
@@ -222,27 +196,9 @@
               "default": true,
               "type": "boolean"
             }
-          },
-          "required": [
-            "tokens",
-            "cache"
-          ],
-          "additionalProperties": false
+          }
         }
-      },
-      "required": [
-        "enabled",
-        "colors",
-        "icons",
-        "display"
-      ],
-      "additionalProperties": false
+      }
     }
-  },
-  "required": [
-    "auto_session_name",
-    "model_select",
-    "custom_footer"
-  ],
-  "additionalProperties": false
+  }
 }

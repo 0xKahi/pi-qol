@@ -5,6 +5,7 @@ export function createConfigJsonSchema(): Record<string, unknown> {
   const jsonSchema = z.toJSONSchema(ConfigSchema, {
     target: 'draft-7',
     unrepresentable: 'any',
+    io: 'input',
   }) as Record<string, unknown>;
 
   return {
