@@ -1,5 +1,11 @@
 # @0xkahi/pi-qol
 
+## 0.0.4
+
+### Patch Changes
+
+- a137e94: fix config schema to allow optional properties
+
 ## 0.0.3
 
 ### Patch Changes
