@@ -5,22 +5,13 @@ import { MAX_CONFIG_WARNING_LINES, MAX_VISIBLE_MODELS } from './constants';
 import { ModelFormatter } from './model-formatter';
 import type { DialogOptions, ModelItem, SelectionSection } from './types';
 
-function isPrintableInput(data: string): boolean {
-  if (data.length === 0) {
-    return false;
-  }
-  return [...data].every(char => {
-    const code = char.charCodeAt(0);
-    return code >= 32 && code !== 0x7f && (code < 0x80 || code > 0x9f);
-  });
-}
-
 export class ModelSelectDialog implements Component, Focusable {
   private readonly searchInput = new Input();
   private activeSection: SelectionSection;
   private selectedFavouriteIndex = 0;
   private selectedSearchIndex = 0;
   private filteredSearchItems: ModelItem[];
+  private filteredFavouriteItems: ModelItem[];
   private _focused = false;
 
   constructor(
@@ -35,9 +26,10 @@ export class ModelSelectDialog implements Component, Focusable {
       : -1;
     this.selectedFavouriteIndex = currentFavouriteIndex >= 0 ? currentFavouriteIndex : 0;
     this.searchInput.setValue(options.initialSearch);
-    this.searchInput.onSubmit = () => this.selectCurrentSearchItem();
+    this.searchInput.onSubmit = () => this.selectCurrentItem();
     this.searchInput.onEscape = () => this.options.onDone(null);
-    this.filteredSearchItems = this.filterSearchItems(options.initialSearch);
+    this.filteredSearchItems = this.filterItems(options.searchItems, options.initialSearch);
+    this.filteredFavouriteItems = this.filterItems(options.favouriteItems, options.initialSearch);
     this.syncFocus();
   }
 
@@ -95,17 +87,16 @@ export class ModelSelectDialog implements Component, Focusable {
       return;
     }
 
-    if (this.activeSection !== 'search' && isPrintableInput(data)) {
-      this.activeSection = 'search';
-      this.syncFocus();
-    }
+    this.searchInput.handleInput(data);
+    this.applyFilter(this.searchInput.getValue());
+    this.tui.requestRender();
+  }
 
-    if (this.activeSection === 'search') {
-      this.searchInput.handleInput(data);
-      this.filteredSearchItems = this.filterSearchItems(this.searchInput.getValue());
-      this.selectedSearchIndex = Math.min(this.selectedSearchIndex, Math.max(0, this.filteredSearchItems.length - 1));
-      this.tui.requestRender();
-    }
+  private applyFilter(query: string): void {
+    this.filteredSearchItems = this.filterItems(this.options.searchItems, query);
+    this.filteredFavouriteItems = this.filterItems(this.options.favouriteItems, query);
+    this.selectedSearchIndex = Math.min(this.selectedSearchIndex, Math.max(0, this.filteredSearchItems.length - 1));
+    this.selectedFavouriteIndex = Math.min(this.selectedFavouriteIndex, Math.max(0, this.filteredFavouriteItems.length - 1));
   }
 
   render(width: number): string[] {
@@ -179,12 +170,12 @@ export class ModelSelectDialog implements Component, Focusable {
   }
 
   private syncFocus(): void {
-    this.searchInput.focused = this._focused && this.activeSection === 'search';
+    this.searchInput.focused = this._focused;
   }
 
   private moveSelection(delta: number): void {
     if (this.activeSection === 'favourites') {
-      this.selectedFavouriteIndex = this.wrapIndex(this.selectedFavouriteIndex + delta, this.options.favouriteItems.length);
+      this.selectedFavouriteIndex = this.wrapIndex(this.selectedFavouriteIndex + delta, this.filteredFavouriteItems.length);
       return;
     }
 
@@ -200,7 +191,7 @@ export class ModelSelectDialog implements Component, Focusable {
 
   private selectCurrentItem(): void {
     if (this.activeSection === 'favourites') {
-      const item = this.options.favouriteItems[this.selectedFavouriteIndex];
+      const item = this.filteredFavouriteItems[this.selectedFavouriteIndex];
       if (item) {
         this.options.onDone(item.model);
       }
@@ -217,12 +208,12 @@ export class ModelSelectDialog implements Component, Focusable {
     }
   }
 
-  private filterSearchItems(query: string): ModelItem[] {
+  private filterItems(items: ModelItem[], query: string): ModelItem[] {
     const trimmed = query.trim();
     if (!trimmed) {
-      return this.options.searchItems;
+      return items;
     }
-    return fuzzyFilter(this.options.searchItems, trimmed, item => item.searchText);
+    return fuzzyFilter(items, trimmed, item => item.searchText);
   }
 
   private renderTitle(): string {
@@ -233,9 +224,9 @@ export class ModelSelectDialog implements Component, Focusable {
   private renderTabs(): string {
     const tabs: string[] = [];
     if (this.options.hasFavouriteSection) {
-      tabs.push(this.renderTab('favourites', `Favourites ${this.options.favouriteItems.length}`));
+      tabs.push(this.renderTab('favourites', `Favourites ${this.filteredFavouriteItems.length}`));
     }
-    tabs.push(this.renderTab('search', `Search ${this.options.searchItems.length}`));
+    tabs.push(this.renderTab('search', `Search ${this.filteredSearchItems.length}`));
     return tabs.join(this.theme.fg('muted', '  '));
   }
 
@@ -250,11 +241,17 @@ export class ModelSelectDialog implements Component, Focusable {
   private renderFavourites(width: number): string[] {
     const lines: string[] = [];
 
+    lines.push(this.line(this.theme.fg('muted', 'Filter:'), width));
+    lines.push(...this.searchInput.render(width));
+    lines.push('');
+
     if (this.options.favouriteItems.length === 0) {
       lines.push(this.line(this.theme.fg('muted', '  No configured favourites are available.'), width));
+    } else if (this.filteredFavouriteItems.length === 0) {
+      lines.push(this.line(this.theme.fg('muted', '  No matching favourites'), width));
     } else {
-      lines.push(...this.renderModelList(this.options.favouriteItems, this.selectedFavouriteIndex, width));
-      const selected = this.options.favouriteItems[this.selectedFavouriteIndex];
+      lines.push(...this.renderModelList(this.filteredFavouriteItems, this.selectedFavouriteIndex, width));
+      const selected = this.filteredFavouriteItems[this.selectedFavouriteIndex];
       if (selected) {
         lines.push('');
         lines.push(this.line(this.theme.fg('muted', `  ${selected.description}`), width));
