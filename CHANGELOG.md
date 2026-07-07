@@ -1,5 +1,11 @@
 # @0xkahi/pi-qol
 
+## 0.0.5
+
+### Patch Changes
+
+- 3257e0d: added filter search on model-select
+
 ## 0.0.4
 
 ### Patch Changes
