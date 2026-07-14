@@ -1,5 +1,11 @@
 # @0xkahi/pi-qol
 
+## 0.0.6
+
+### Patch Changes
+
+- fb6e04c: use dye package instead of crayon
+
 ## 0.0.5
 
 ### Patch Changes
