@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { dye } from '@0xkahi/cli-dye';
 import type { ContextUsage, SessionEntry } from '@earendil-works/pi-coding-agent';
 import { EMPTY_BAR_ICON, FILLED_BAR_ICON } from '../../src/extensions/custom-footer/constants';
 import {
@@ -8,7 +9,6 @@ import {
   formatTokens,
 } from '../../src/extensions/custom-footer/token-stats';
 import type { CustomFooterColors, CustomFooterIcons, FooterTheme, UsageTotals } from '../../src/extensions/custom-footer/types';
-import { crayon } from '../../src/utils/crayon.util';
 
 const identityTheme: FooterTheme = {
   fg: (_color, text) => text,
@@ -89,6 +89,8 @@ function assistantEntry(usage: {
 }
 
 describe('custom-footer token stats', () => {
+  afterEach(() => dye.setEnabled(undefined));
+
   test('formatTokens matches pi footer thresholds', () => {
     expect(formatTokens(999)).toBe('999');
     expect(formatTokens(1000)).toBe('1.0k');
@@ -200,7 +202,9 @@ describe('custom-footer token stats', () => {
     ).toBe('<error>95.0%/128k</error>');
   });
 
-  test('buildSubscriptionUsageSegment renders colored provider usage with progress bar and reset', () => {
+  test('buildSubscriptionUsageSegment renders cli-dye truecolor provider usage with progress bar and reset', () => {
+    dye.setEnabled(true);
+
     const segment = buildSubscriptionUsageSegment({
       colors,
       icons,
@@ -214,10 +218,13 @@ describe('custom-footer token stats', () => {
       },
     });
 
-    expect(crayon.stripAnsi(segment)).toBe(`Claude 5h ${FILLED_BAR_ICON.repeat(5)}${EMPTY_BAR_ICON.repeat(5)} 50%  45m`);
+    expect(segment).toContain('\x1b[38;2;217;119;6m');
+    expect(dye.strip(segment)).toBe(`Claude 5h ${FILLED_BAR_ICON.repeat(5)}${EMPTY_BAR_ICON.repeat(5)} 50%  45m`);
   });
 
   test('buildSubscriptionUsageSegment omits refresh cluster without reset description', () => {
+    dye.setEnabled(true);
+
     const segment = buildSubscriptionUsageSegment({
       colors,
       icons,
@@ -230,6 +237,24 @@ describe('custom-footer token stats', () => {
       },
     });
 
-    expect(crayon.stripAnsi(segment)).toBe(`Codex Week ${FILLED_BAR_ICON.repeat(10)} 100%`);
+    expect(dye.strip(segment)).toBe(`Codex Week ${FILLED_BAR_ICON.repeat(10)} 100%`);
+  });
+
+  test('buildSubscriptionUsageSegment returns plain text when cli-dye is disabled', () => {
+    dye.setEnabled(false);
+
+    const segment = buildSubscriptionUsageSegment({
+      colors,
+      icons,
+      theme: identityTheme,
+      usage: {
+        provider: 'anthropic',
+        responseLabel: 'Claude',
+        windowLabel: '5h',
+        usedPercent: 50,
+      },
+    });
+
+    expect(segment).toBe(`Claude 5h ${FILLED_BAR_ICON.repeat(5)}${EMPTY_BAR_ICON.repeat(5)} 50%`);
   });
 });

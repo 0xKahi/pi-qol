@@ -45,5 +45,5 @@ The extension is feature-gated by the `custom_footer` config flag and can dynami
 - **`@earendil-works/pi-tui`**: Implements the `Component` contract and uses `truncateToWidth`, `visibleWidth`, and `TUI.requestRender`.
 - **`../../config-loader`**: Reads the `custom_footer` feature flag and full footer config (colors, icons, display toggles) via `ConfigLoader`.
 - **`../../schemas/config.schema`**: `CustomFooterConfig` is derived from the `Config` schema's `custom_footer` shape.
-- **`../../utils/crayon.util`**: Applies custom ANSI colors to directory text, model name, and subscription usage labels.
+- **`@0xkahi/cli-dye`**: Applies configured truecolor ANSI styling to directory text, model name, and subscription usage labels.
 - **`../../libs/subscription-usage/**`**: Delegates OAuth usage fetching and reset formatting to `SubscriptionUsageApi` and provider-specific strategies.

@@ -1,5 +1,5 @@
+import { dye } from '@0xkahi/cli-dye';
 import type { ContextUsage, SessionEntry } from '@earendil-works/pi-coding-agent';
-import { crayon } from '../../utils/crayon.util';
 import { clampPercent, renderProgressBar } from './progress-bar';
 import type { CustomFooterColors, CustomFooterDisplay, CustomFooterIcons, FooterTheme, SupportedProvider, UsageTotals } from './types';
 
@@ -71,14 +71,15 @@ export function buildSubscriptionUsageSegment({
   const pct = clampPercent(usage.usedPercent);
   const roundedPercent = Math.round(pct).toString();
   const bar = renderProgressBar(pct);
+  const foreground = dye.hex(providerColor);
 
   const resetParts = usage.resetDescription ? [icons.refresh, usage.resetDescription].filter(Boolean).join(' ') : '';
 
   return [
-    crayon.colorize(usage.responseLabel, { fg: providerColor }),
-    crayon.colorize(usage.windowLabel, { fg: providerColor }),
-    `${crayon.colorize(bar.filled, { fg: providerColor })}${theme.fg('dim', bar.empty)}`,
-    crayon.colorize(`${roundedPercent}%`, { fg: providerColor }),
+    dye.colorize(usage.responseLabel, { fg: foreground }),
+    dye.colorize(usage.windowLabel, { fg: foreground }),
+    `${dye.colorize(bar.filled, { fg: foreground })}${theme.fg('dim', bar.empty)}`,
+    dye.colorize(`${roundedPercent}%`, { fg: foreground }),
     resetParts ? theme.fg('dim', resetParts) : undefined,
   ]
     .filter((part): part is string => Boolean(part))

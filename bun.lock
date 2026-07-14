@@ -5,6 +5,7 @@
     "": {
       "name": "@0xkahi/pi-qol",
       "dependencies": {
+        "@0xkahi/cli-dye": "^1.1.0",
         "zod": "^4.4.3",
       },
       "devDependencies": {
@@ -26,6 +27,8 @@
     },
   },
   "packages": {
+    "@0xkahi/cli-dye": ["@0xkahi/cli-dye@1.1.0", "", {}, "sha512-bX8TRF7/ZbBMe7cUt1/Tj5tqKsuJYyMJMEQrRsaRyZ5JX0K2Y2oPZ/DR3hp9hmxZJbcgQQik1DDIaz1x0LNWxQ=="],
+
     "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.91.1", "", { "dependencies": { "json-schema-to-ts": "^3.1.1" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-LAmu761tSN9r66ixvmciswUj/ZC+1Q4iAfpedTfSVLeswRwnY3n2Nb6Tsk+cLPP28aLOPWeMgIuTuCcMC6W/iw=="],
 
     "@aws-crypto/crc32": ["@aws-crypto/crc32@5.2.0", "", { "dependencies": { "@aws-crypto/util": "^5.2.0", "@aws-sdk/types": "^3.222.0", "tslib": "^2.6.2" } }, "sha512-nLbCWqQNgUiwwtFsen1AdzAtvuLRsQS8rYgMuxCrdKf9kOssamGLuPwyTY9wyYblNr9+1XM8v6zoDTPPSIeANg=="],

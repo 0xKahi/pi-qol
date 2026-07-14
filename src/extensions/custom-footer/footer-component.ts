@@ -1,7 +1,7 @@
 import { basename } from 'node:path';
+import { dye } from '@0xkahi/cli-dye';
 import type { Component } from '@earendil-works/pi-tui';
 import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
-import { crayon } from '../../utils/crayon.util';
 import { pickSubscriptionUsageWindow, resolveSupportedProvider, SubscriptionUsageManager } from './subscription-usage-manager';
 import { buildStatsLeft, buildSubscriptionUsageSegment, calculateUsageTotals } from './token-stats';
 import type { CustomFooterComponentDeps, CustomFooterConfig } from './types';
@@ -74,7 +74,7 @@ export class CustomFooterComponent implements Component {
 
     let line: string;
     if (config.colors.directory) {
-      line = crayon.colorize(directoryText, { fg: config.colors.directory });
+      line = dye.colorize(directoryText, { fg: dye.hex(config.colors.directory) });
       if (branch) line += this.deps.theme.fg('dim', ` (${branch})`);
       if (sessionName) line += this.deps.theme.fg('dim', ` • ${sessionName}`);
     } else {
@@ -140,7 +140,7 @@ export class CustomFooterComponent implements Component {
     const model = this.deps.ctx.model;
     const modelName = model?.id ?? 'no-model';
     const modelNameSegment = config.colors.modelName
-      ? crayon.colorize(modelName, { fg: config.colors.modelName })
+      ? dye.colorize(modelName, { fg: dye.hex(config.colors.modelName) })
       : this.deps.theme.fg('dim', modelName);
 
     if (!model?.reasoning) return modelNameSegment;
