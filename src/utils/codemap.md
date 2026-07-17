@@ -6,7 +6,7 @@ This folder contains low-level, reusable helpers used across the `pi-qol` extens
 
 - **`model-resolver.util.ts`** — Resolve a concrete AI model and its authentication credentials from a configured `ModelConfig` or the active session model.
 - **`raw-data-parser.util.ts`** — Type-safe coercion helpers for `unknown` runtime values into `Record<string, unknown>`, trimmed `string`, or finite `number`.
-- **`path.util.ts`** — Locate extension-specific files on disk: generic file existence checks, global/project extension `config.json`, and the shared `auth.json` file.
+- **`path.util.ts`** — Resolve extension-specific paths on disk: shell-style variable expansion (`~`, `$HOME`, `$VAR`), generic file existence checks, global/project extension `config.json`, and the shared `auth.json` file.
 
 ## Design Patterns
 
@@ -30,6 +30,7 @@ This folder contains low-level, reusable helpers used across the `pi-qol` extens
    - `numberValue` coerces strings/numbers and returns only finite values.
 
 3. **Path resolution**
+   - `PathUtil.expandPath` replaces shell-style variables (`~`, `$HOME`, `$VAR`, `${VAR}`) and `~` with the user's home directory.
    - `PathUtil.findFile` checks `existsSync` and returns both existence and the resolved path.
    - `findExtensionConfig({ type: 'global' })` resolves to `<agentDir>/extensions/<EXTENSION_ID>/config.json`.
    - `findExtensionConfig({ type: 'project', cwd })` resolves to `<cwd>/.pi/extensions/<EXTENSION_ID>/config.json`.
@@ -46,5 +47,5 @@ This folder contains low-level, reusable helpers used across the `pi-qol` extens
   - `EXTENSION_ID` is used by `PathUtil` to build config directory paths.
 - `../schemas/shared-config.schema`
   - `ModelConfig` and its `reasoning` field are consumed by `ModelResolver`.
-- `node:fs` / `node:path`
-  - `PathUtil` relies on Node built-ins for synchronous file existence and cross-platform path joining.
+- `node:fs` / `node:path` / `node:os`
+  - `PathUtil` relies on Node built-ins for synchronous file existence, cross-platform path joining, and shell-style variable expansion (`homedir`, `userInfo`).

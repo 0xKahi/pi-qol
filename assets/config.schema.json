@@ -51,6 +51,12 @@
       "default": {
         "enabled": false,
         "favourite": [],
+        "favourite_label": "Favourites",
+        "groups": [],
+        "hide_tabs": {
+          "groups": false,
+          "search": false
+        },
         "provider_filter": [],
         "layout": "inline"
       },
@@ -71,12 +77,50 @@
               },
               "modelId": {
                 "type": "string"
+              },
+              "groups": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
               }
             },
             "required": [
               "provider",
               "modelId"
             ]
+          }
+        },
+        "favourite_label": {
+          "default": "Favourites",
+          "type": "string",
+          "minLength": 1
+        },
+        "groups": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "hide_tabs": {
+          "default": {
+            "groups": false,
+            "search": false
+          },
+          "type": "object",
+          "properties": {
+            "groups": {
+              "default": false,
+              "type": "boolean"
+            },
+            "search": {
+              "default": false,
+              "type": "boolean"
+            }
           }
         },
         "provider_filter": {

@@ -15,6 +15,8 @@ export async function buildModelLists(ctx: ExtensionContext, config: Config['mod
   const favouriteItems: ModelItem[] = [];
   const favouriteWarnings: string[] = [];
   const seenFavouriteModels = new Set<string>();
+  const uniqueGroups = [...new Set(config.groups)];
+  const groupedItems = new Map(uniqueGroups.map(name => [name, [] as ModelItem[]]));
 
   for (const favourite of config.favourite) {
     const model = ctx.modelRegistry.find(favourite.provider, favourite.modelId);
@@ -35,10 +37,16 @@ export async function buildModelLists(ctx: ExtensionContext, config: Config['mod
       continue;
     }
     seenFavouriteModels.add(key);
-    favouriteItems.push(ModelFormatter.toModelItem(model));
+
+    const item = ModelFormatter.toModelItem(model);
+    favouriteItems.push(item);
+    for (const group of favourite.groups) {
+      groupedItems.get(group)?.push(item);
+    }
   }
 
-  return { favouriteItems, favouriteWarnings, searchItems: sortedSearchModels };
+  const groupLists = uniqueGroups.map(name => ({ name, items: groupedItems.get(name) ?? [] }));
+  return { favouriteItems, favouriteWarnings, groupLists, searchItems: sortedSearchModels };
 }
 
 export function findExactModel(ctx: ExtensionContext, args: string): Model<Api> | undefined {

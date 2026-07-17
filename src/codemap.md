@@ -7,10 +7,10 @@ Top-level source root for `pi-qol`, a Pi coding-agent extension that layers smal
 It coordinates three feature modules:
 
 - **auto_session_name**: Generates and applies a concise session title from the user's first message before the agent runs.
-- **model_select**: Registers a `/select-model` command (plus a cross-extension event) for picking or searching available models with favourites and provider filtering.
+- **model_select**: Registers a `/select-model` command (plus a cross-extension event) for picking or searching available models with favourites, ordered custom groups, provider filtering, and an inline or overlay layout.
 - **custom_footer**: Replaces the default footer with a richer status bar showing cwd/branch/session, token/cost/cache stats, context-window usage, subscription-rate usage, and the current model/thinking level.
 
-Shared concerns live here too: extension configuration loading, path resolution, model/auth resolution, output colorization, and Zod schemas for every feature.
+Shared concerns live here too: extension configuration loading, path resolution, model/auth resolution, and Zod schemas for every feature.
 
 ## Design Patterns
 
@@ -42,7 +42,7 @@ Shared concerns live here too: extension configuration loading, path resolution,
 
 4. **model_select** (`extensions/model-select/`)
    - Lazily registers once on `session_start` when enabled.
-   - `/select-model [args]` handler refreshes the registry, attempts an exact provider/model match, otherwise opens a custom TUI dialog.
+   - `/select-model [args]` handler refreshes the registry, attempts an exact provider/model match, otherwise opens a custom TUI dialog with Favourites, group, and Search tabs.
    - `ModelSelectDialog` filters search items with fuzzy matching, navigates favourites/search sections, and returns the chosen model to `pi.setModel`.
    - `PI_VIM_KEY_EVENT_ID` allows other extensions to trigger the same picker.
 

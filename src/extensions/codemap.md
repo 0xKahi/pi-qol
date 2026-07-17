@@ -7,7 +7,7 @@ This folder contains the feature-level extension modules for `pi-qol`. Each chil
 Current features:
 
 - `auto-session-name` – automatically generates and applies a concise session title from the user’s first message.
-- `model-select` – provides an interactive `/select-model` command (and cross-extension activation hook) for choosing models from the registry with favourites, search, and provider filtering.
+- `model-select` – provides an interactive `/select-model` command (and cross-extension activation hook) for choosing models from the registry with permanent Favourites, ordered custom groups, Search, provider filtering, and inline or overlay layout.
 - `custom-footer` – replaces the TUI footer with a richer status bar showing cwd, git branch, session name, model, token/cost usage, context-window usage, and subscription usage.
 
 ## Design Patterns
@@ -39,7 +39,8 @@ Current features:
 3. **model-select flow**
    - Lazy-activated once on `session_start` if enabled.
    - Command handler calls `waitForIdle` (when available), refreshes `ctx.modelRegistry`, attempts an exact provider/model match from arguments, then falls back to an interactive `ModelSelectDialog`.
-   - The dialog uses fuzzy filtering, tab switching between favourites/search, and keyboard navigation; selection is applied via `pi.setModel`.
+   - List preparation resolves authenticated favourites, derives exact case-sensitive group subsets, and applies provider filtering only to Search.
+   - The dialog uses one fuzzy query across dynamically visible Favourites/group/Search tabs, preserves per-tab selection, keeps the active tab represented at narrow widths, and renders in an inline or overlay layout; selection is applied via `pi.setModel`.
    - The event-bus handler captures the latest context so the picker can also be opened without a command context.
 
 4. **custom-footer flow**
