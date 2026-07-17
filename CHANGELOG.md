@@ -1,5 +1,11 @@
 # @0xkahi/pi-qol
 
+## 0.1.0
+
+### Minor Changes
+
+- c60b7e9: added grouping to model_select
+
 ## 0.0.6
 
 ### Patch Changes
