@@ -31,13 +31,13 @@ The package is distributed as `@0xkahi/pi-qol`; its published payload is the sou
 | `src/` | Top-level runtime source for the Pi extension; bootstraps config and registers all feature modules plus shared concerns. | [View Map](src/codemap.md) |
 | `src/extensions/` | Feature-level registration layer for auto session naming, model selection, and custom footer integration with Pi lifecycle events and UI hooks. | [View Map](src/extensions/codemap.md) |
 | `src/extensions/auto-session-name/` | Generates and applies concise session titles from the first user message using guarded, abortable model calls. | [View Map](src/extensions/auto-session-name/codemap.md) |
-| `src/extensions/model-select/` | Provides `/select-model` and event-driven interactive model picking with favourites, fuzzy search, and provider filtering. | [View Map](src/extensions/model-select/codemap.md) |
+| `src/extensions/model-select/` | Provides `/select-model` and event-driven interactive model picking with permanent Favourites, ordered group tabs, fuzzy search, and Search-only provider filtering. | [View Map](src/extensions/model-select/codemap.md) |
 | `src/extensions/custom-footer/` | Replaces the default TUI footer with a status component for cwd/branch/session/model, token/cost/context, and subscription usage. | [View Map](src/extensions/custom-footer/codemap.md) |
 | `src/libs/` | Shared domain libraries; currently provider-agnostic subscription usage access for UI consumers. | [View Map](src/libs/codemap.md) |
 | `src/libs/subscription-usage/` | Fetches and normalizes AI-provider subscription/rate-limit usage behind a common facade. | [View Map](src/libs/subscription-usage/codemap.md) |
 | `src/libs/subscription-usage/strategy/` | Provider-specific Strategy implementations for Anthropic OAuth and OpenAI Codex usage APIs. | [View Map](src/libs/subscription-usage/strategy/codemap.md) |
 | `src/schemas/` | Zod-based single source of truth for config validation, defaults, partial override shapes, and exported config types. | [View Map](src/schemas/codemap.md) |
-| `src/utils/` | Low-level shared helpers for ANSI styling, model/auth resolution, raw JSON coercion, and Pi path lookup. | [View Map](src/utils/codemap.md) |
+| `src/utils/` | Low-level shared helpers for model/auth resolution, raw JSON coercion, and Pi path lookup with shell-style path expansion. | [View Map](src/utils/codemap.md) |
 | `scripts/` | Bun maintenance scripts for generating the JSON Schema asset from the source Zod schema. | [View Map](scripts/codemap.md) |
 | `assets/` | Static generated artifacts, primarily the draft-07 JSON Schema consumed by editors and config tooling. | [View Map](assets/codemap.md) |
 
@@ -55,7 +55,7 @@ The package is distributed as `@0xkahi/pi-qol`; its published payload is the sou
 2. The default export creates one `ConfigLoader` and registers a `session_start` handler.
 3. On each session start, config is loaded from Pi-global and trusted project locations, shallow-merged by feature section, validated by `ConfigSchema`, and surfaced to the UI if invalid.
 4. `registerAutoSessionName`, `registerModelSelect`, and `registerCustomFooter` attach their own lifecycle, command, event, and UI handlers.
-5. Runtime feature code reads config through `ConfigLoader`, uses shared utilities for model/auth/path/data parsing, and calls Pi host APIs for session naming, model switching, notifications, and footer rendering.
+5. Runtime feature code reads config through `ConfigLoader`; model-select resolves authenticated favourites into ordered group views and dynamic tabs, while shared utilities support model/auth/path/data parsing before features call Pi host APIs for session naming, model switching, notifications, and footer rendering.
 6. Build-time schema generation flows from `src/schemas/config.schema.ts` through `scripts/build-schema.ts` into `assets/config.schema.json`.
 
 ## Integration Points

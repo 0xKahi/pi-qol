@@ -11,6 +11,9 @@ export const ConfigSchema = z.object({
   model_select: ModelSelectConfigSchema.default({
     enabled: false,
     favourite: [],
+    favourite_label: 'Favourites',
+    groups: [],
+    hide_tabs: { groups: false, search: false },
     provider_filter: [],
     layout: 'inline',
   }),

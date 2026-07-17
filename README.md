@@ -37,11 +37,13 @@ never blocks your turn.
 
 ### `model_select`
 
-Adds `/select-model`, an interactive model picker with fuzzy search, optional favourites,
-provider filtering, and inline or overlay layouts,
+Adds `/select-model`, an interactive model picker with fuzzy search, permanent
+Favourites, ordered custom group tabs, provider filtering, and inline or overlay layouts.
 
-- **quick access** to listed favourite models
-- **filtering** specified providers from model search 
+- **quick access** to listed favourite models and user-defined favourite subsets
+- **shared filtering** across Favourites, group, and Search tabs
+- **bidirectional tab navigation** with Tab and Shift+Tab
+- **provider filtering** for Search without removing models from favourite tabs
 
 allow keybindings with [pi-vim-keys](https://github.com/0xKahi/pi-vim-keys) with eventId of `pi.vimKeys.event:pi-qol.model_select`
 
@@ -95,8 +97,17 @@ them (project overrides global):
   "model_select": {
     "enabled": true,
     "layout": "overlay",
+    "favourite_label": "Pinned",
     "provider_filter": ["anthropic", "openai"],
-    "favourite": [{ "provider": "anthropic", "modelId": "claude-sonnet-4-5" }]
+    "groups": ["work", "fast"],
+    "favourite": [
+      {
+        "provider": "anthropic",
+        "modelId": "claude-sonnet-4-5",
+        "groups": ["work", "fast"]
+      }
+    ],
+    "hide_tabs": { "groups": false, "search": false }
   },
   "custom_footer": {
     "enabled": true,
@@ -136,12 +147,24 @@ falls back to the active session model and surfaces a warning notification.
 
 #### `model_select`
 
-| Key               | Type      | Default  | Description                                               |
-| ----------------- | --------- | -------- | --------------------------------------------------------- |
-| `enabled`         | `boolean` | `false`  | Turn the model picker on.                                 |
-| `layout`          | `enum`    | `inline` | Picker layout: `inline` or `overlay`.                     |
-| `provider_filter` | `string[]`| `[]`     | Restrict searchable models to these providers.            |
-| `favourite`       | `object[]`| `[]`     | Favourite models shown in a separate tab (`provider`, `modelId`). |
+| Key                    | Type       | Default  | Description                                               |
+| ---------------------- | ---------- | -------- | --------------------------------------------------------- |
+| `enabled`              | `boolean`  | `false`  | Turn the model picker on.                                 |
+| `layout`               | `enum`     | `inline` | Picker layout: `inline` or `overlay`.                     |
+| `favourite_label`      | `string`   | `Favourites` | Non-empty label for the permanent first tab.          |
+| `provider_filter`      | `string[]` | `[]`     | Restrict Search models to these providers; favourite tabs are unaffected. |
+| `groups`               | `string[]` | `[]`     | Ordered custom group tabs. Exact duplicate names use their first occurrence. |
+| `favourite`            | `object[]` | `[]`     | Favourite models (`provider`, `modelId`, optional `groups`). |
+| `favourite[].groups`   | `string[]` | `[]`     | Exact, case-sensitive group memberships for a favourite. Unknown names are ignored. |
+| `hide_tabs.groups`     | `boolean`  | `false`  | Hide all custom group tabs.                               |
+| `hide_tabs.search`     | `boolean`  | `false`  | Hide the Search tab. Favourites cannot be hidden.         |
+
+The favourites tab is always first, even when empty, and uses `favourite_label`
+as its display label. Unique groups follow in configured order, and Search is
+last when visible. Use Tab to cycle forward and Shift+Tab to cycle backward
+through visible tabs. A favourite can belong to multiple groups; group tabs
+contain only resolved, authenticated favourites and preserve favourite order.
+Duplicate favourite declarations remain first-entry-wins.
 
 #### `custom_footer`
 
@@ -160,8 +183,12 @@ falls back to the active session model and surfaces a warning notification.
 | `icons.cacheWrite`          | `string`  | nerd font | Glyph for cache-write tokens.                    |
 | `icons.refresh`             | `string`  | nerd font | Glyph shown before the subscription reset time.  |
 
-Project config shallow-merges each top-level section over global config. If project
-config sets `model_select.favourite`, it replaces the global favourites array.
+Project config shallow-merges each top-level section over global config. Arrays
+replace lower-precedence arrays, so project `model_select.favourite` or
+`model_select.groups` replaces the corresponding global array. Nested objects are
+also replaced as values during that section merge; for example, a project
+`hide_tabs` object replaces the global one, then omitted `groups` or `search`
+fields receive their default of `false`.
 
 ## How it works
 

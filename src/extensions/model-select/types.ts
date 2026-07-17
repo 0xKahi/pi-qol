@@ -7,22 +7,31 @@ export type ModelItem = {
   searchText: string;
 };
 
+export type ModelGroupList = {
+  name: string;
+  items: ModelItem[];
+};
+
 export type ModelLists = {
   favouriteItems: ModelItem[];
   favouriteWarnings: string[];
+  groupLists: ModelGroupList[];
   searchItems: ModelItem[];
 };
 
-export type SelectionSection = 'favourites' | 'search';
+export type TabIdentity = { kind: 'favourites' } | { kind: 'group'; name: string } | { kind: 'search' };
 
 export type DialogResult = Model<Api> | null;
 
 export type DialogOptions = {
   currentModel: Model<Api> | undefined;
   favouriteItems: ModelItem[];
+  favouriteLabel: string;
   favouriteWarnings: string[];
-  hasFavouriteSection: boolean;
+  groupLists: ModelGroupList[];
   searchItems: ModelItem[];
+  hideGroupTabs: boolean;
+  hideSearchTab: boolean;
   providerFilter: string[];
   configWarnings: string[];
   initialSearch: string;

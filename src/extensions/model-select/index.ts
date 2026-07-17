@@ -44,9 +44,12 @@ async function showModelSelector(pi: ExtensionAPI, args: string, ctx: ExtensionC
       new ModelSelectDialog(tui, theme, keybindings, {
         currentModel: ctx.model,
         favouriteItems: modelLists.favouriteItems,
+        favouriteLabel: config.favourite_label,
         favouriteWarnings: modelLists.favouriteWarnings,
-        hasFavouriteSection: config.favourite.length > 0,
+        groupLists: modelLists.groupLists,
         searchItems: modelLists.searchItems,
+        hideGroupTabs: config.hide_tabs.groups,
+        hideSearchTab: config.hide_tabs.search,
         providerFilter: config.provider_filter,
         configWarnings: registryError ? [`models.json: ${registryError}`] : [],
         initialSearch: args.trim(),
