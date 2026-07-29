@@ -1,22 +1,27 @@
-import type { Api, Model } from '@earendil-works/pi-ai';
+import { type Api, getSupportedThinkingLevels, type Model } from '@earendil-works/pi-ai';
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { ConfigLoader } from '../../config-loader';
+import type { ModelSelectConfig } from '../../schemas/model-select.config.schema';
 import { COMMAND_NAME, PI_VIM_KEY_EVENT_ID } from './constants';
 import { ModelFormatter } from './model-formatter';
 import { buildModelLists, findExactModel } from './model-lists';
 import { ModelSelectDialog } from './model-select-dialog';
 import type { DialogResult } from './types';
 
-async function applySelectedModel(pi: ExtensionAPI, ctx: ExtensionContext, model: Model<Api>): Promise<void> {
+export async function applySelectedModel(pi: ExtensionAPI, ctx: ExtensionContext, model: Model<Api>, config: ModelSelectConfig): Promise<void> {
   const success = await pi.setModel(model);
   if (success) {
+    const defaultReasoning = config.default_reasoning;
+    if (defaultReasoning && getSupportedThinkingLevels(model).includes(defaultReasoning)) {
+      pi.setThinkingLevel(defaultReasoning);
+    }
     ctx.ui.notify(`Model set to ${ModelFormatter.modelLabel(model)}`, 'info');
   } else {
     ctx.ui.notify(`No configured auth for ${ModelFormatter.modelLabel(model)}`, 'error');
   }
 }
 
-async function showModelSelector(pi: ExtensionAPI, args: string, ctx: ExtensionContext, configLoader: ConfigLoader): Promise<void> {
+export async function showModelSelector(pi: ExtensionAPI, args: string, ctx: ExtensionContext, configLoader: ConfigLoader): Promise<void> {
   // `waitForIdle` only exists on command contexts. When invoked from the event
   // bus we get a plain ExtensionContext, so fall back to a best-effort guard.
   if ('waitForIdle' in ctx && typeof ctx.waitForIdle === 'function') {
@@ -24,9 +29,10 @@ async function showModelSelector(pi: ExtensionAPI, args: string, ctx: ExtensionC
   }
   ctx.modelRegistry.refresh();
 
+  const config = configLoader.getModelSelect();
   const exactModel = findExactModel(ctx, args);
   if (exactModel) {
-    await applySelectedModel(pi, ctx, exactModel);
+    await applySelectedModel(pi, ctx, exactModel, config);
     return;
   }
 
@@ -35,7 +41,6 @@ async function showModelSelector(pi: ExtensionAPI, args: string, ctx: ExtensionC
     return;
   }
 
-  const config = configLoader.getModelSelect();
   const modelLists = await buildModelLists(ctx, config);
   const registryError = ctx.modelRegistry.getError();
 
@@ -51,6 +56,7 @@ async function showModelSelector(pi: ExtensionAPI, args: string, ctx: ExtensionC
         hideGroupTabs: config.hide_tabs.groups,
         hideSearchTab: config.hide_tabs.search,
         providerFilter: config.provider_filter,
+        defaultReasoning: config.default_reasoning,
         configWarnings: registryError ? [`models.json: ${registryError}`] : [],
         initialSearch: args.trim(),
         layout: config.layout,
@@ -69,7 +75,7 @@ async function showModelSelector(pi: ExtensionAPI, args: string, ctx: ExtensionC
   );
 
   if (selected) {
-    await applySelectedModel(pi, ctx, selected);
+    await applySelectedModel(pi, ctx, selected, config);
   }
 }
 

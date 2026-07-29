@@ -63,6 +63,11 @@ function groups(...entries: Array<[string, ModelItem[]]>): ModelGroupList[] {
 }
 
 describe('model-select dialog', () => {
+  test('renders configured default reasoning in the title and omits it when unset', () => {
+    expect(createDialog({ defaultReasoning: 'high' }).render(100)[1]).toContain('reasoning: high');
+    expect(createDialog().render(100)[1]).not.toContain('reasoning:');
+  });
+
   test('renders a custom permanent label without label identity collisions', () => {
     const dialog = createDialog({
       favouriteLabel: 'Search',
