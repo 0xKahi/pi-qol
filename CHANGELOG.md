@@ -1,5 +1,11 @@
 # @0xkahi/pi-qol
 
+## 0.1.1
+
+### Patch Changes
+
+- 490308c: added default model reasoning for model select
+
 ## 0.1.0
 
 ### Minor Changes
