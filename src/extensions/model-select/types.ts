@@ -1,5 +1,6 @@
 import type { Api, Model } from '@earendil-works/pi-ai';
 import type { ModelSelectLayout } from '../../schemas/model-select.config.schema';
+import type { ReasoningLevel } from '../../schemas/shared-config.schema';
 
 export type ModelItem = {
   model: Model<Api>;
@@ -33,6 +34,7 @@ export type DialogOptions = {
   hideGroupTabs: boolean;
   hideSearchTab: boolean;
   providerFilter: string[];
+  defaultReasoning?: ReasoningLevel;
   configWarnings: string[];
   initialSearch: string;
   layout: ModelSelectLayout;

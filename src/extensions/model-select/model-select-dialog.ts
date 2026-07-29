@@ -217,7 +217,8 @@ export class ModelSelectDialog implements Component, Focusable {
 
   private renderTitle(): string {
     const current = this.options.currentModel ? ModelFormatter.modelLabel(this.options.currentModel) : 'none';
-    return `${this.theme.fg('customMessageLabel', this.theme.bold('Select Model'))} ${this.theme.fg('muted', `current: ${current}`)}`;
+    const reasoning = this.options.defaultReasoning ? ` • reasoning: ${this.options.defaultReasoning}` : '';
+    return `${this.theme.fg('customMessageLabel', this.theme.bold('Select Model'))} ${this.theme.fg('muted', `current: ${current}${reasoning}`)}`;
   }
 
   private renderTabs(width: number): string {

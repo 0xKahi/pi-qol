@@ -53,6 +53,13 @@ describe('model-select config schema', () => {
     ).toBe(false);
   });
 
+  test('accepts optional default reasoning without materializing a default value', () => {
+    expect(ConfigSchema.parse({}).model_select.default_reasoning).toBeUndefined();
+    expect(ConfigSchema.parse({ model_select: { default_reasoning: 'high' } }).model_select.default_reasoning).toBe('high');
+    expect(PartialConfigSchema.parse({ model_select: { default_reasoning: 'low' } }).model_select).toEqual({ default_reasoning: 'low' });
+    expect(ConfigSchema.safeParse({ model_select: { default_reasoning: 'unsupported' } }).success).toBe(false);
+  });
+
   test('partial model-select config accepts label overrides and omitted fields without defaulting the section', () => {
     expect(PartialConfigSchema.parse({ model_select: { favourite_label: 'Pinned' } }).model_select).toEqual({
       favourite_label: 'Pinned',

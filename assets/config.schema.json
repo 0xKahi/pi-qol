@@ -131,6 +131,17 @@
             "minLength": 1
           }
         },
+        "default_reasoning": {
+          "type": "string",
+          "enum": [
+            "off",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ]
+        },
         "layout": {
           "default": "inline",
           "type": "string",

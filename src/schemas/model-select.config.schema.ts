@@ -1,5 +1,5 @@
 import z from 'zod';
-import { ModelConfigSchema } from './shared-config.schema';
+import { ModelConfigSchema, ReasoningLevelSchema } from './shared-config.schema';
 
 const NonEmptyNameSchema = z.string().min(1);
 
@@ -22,6 +22,7 @@ export const ModelSelectConfigSchema = z.object({
   groups: z.array(NonEmptyNameSchema).default([]),
   hide_tabs: HideTabsSchema.default({ groups: false, search: false }),
   provider_filter: z.array(NonEmptyNameSchema).default([]),
+  default_reasoning: ReasoningLevelSchema.optional(),
   layout: ModelSelectLayoutSchema.default('inline'),
 });
 export type ModelSelectConfig = z.infer<typeof ModelSelectConfigSchema>;
@@ -44,6 +45,7 @@ export const PartialModelSelectConfigSchema = z.object({
     })
     .optional(),
   provider_filter: z.array(NonEmptyNameSchema).optional(),
+  default_reasoning: ReasoningLevelSchema.optional(),
   layout: ModelSelectLayoutSchema.optional(),
 });
 export type PartialModelSelectConfig = z.infer<typeof PartialModelSelectConfigSchema>;
