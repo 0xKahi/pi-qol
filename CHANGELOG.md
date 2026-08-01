@@ -1,5 +1,11 @@
 # @0xkahi/pi-qol
 
+## 1.0.0
+
+### Major Changes
+
+- 0fc6f1a: added pi context view extension
+
 ## 0.1.1
 
 ### Patch Changes
