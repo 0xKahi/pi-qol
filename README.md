@@ -109,6 +109,9 @@ them (project overrides global):
     ],
     "hide_tabs": { "groups": false, "search": false }
   },
+  "context_view": {
+    "enabled": true
+  },
   "custom_footer": {
     "enabled": true,
     "colors": {
@@ -165,6 +168,16 @@ last when visible. Use Tab to cycle forward and Shift+Tab to cycle backward
 through visible tabs. A favourite can belong to multiple groups; group tabs
 contain only resolved, authenticated favourites and preserve favourite order.
 Duplicate favourite declarations remain first-entry-wins.
+
+#### `context_view`
+
+| Key       | Type      | Default | Description |
+| --------- | --------- | ------- | ----------- |
+| `enabled` | `boolean` | `false` | Enable the Context View capture and interface. |
+
+### Context View
+
+Context View is a fork of Dmitry Makarov's [pi-context-view](https://github.com/dimk90/pi-context-view), adapted into one unified tabbed interface with Vim-friendly keybindings. Enable it, then run `/context-view` with no arguments. The Usage tab opens first; Tab and Shift+Tab switch between Usage and Injections. Use `j`/`k` or arrows to move, `Ctrl+u`/`Ctrl+d` to move by a page, `gg`/`G` to jump to the beginning/end, Enter to preview, and Esc or `q` to return or close. Other extensions can open the same view by emitting `pi.vimKeys.event:pi-qol.context_view`.
 
 #### `custom_footer`
 

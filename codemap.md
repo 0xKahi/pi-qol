@@ -2,7 +2,7 @@
 
 ## Project Responsibility
 
-`pi-qol` is a Pi Coding Agent extension package that adds quality-of-life features to the host runtime: automatic session naming, interactive model selection, and a custom terminal footer with richer status and usage information.
+`pi-qol` is a Pi Coding Agent extension package that adds quality-of-life features to the host runtime: automatic session naming, interactive model selection, context inspection, and a custom terminal footer with richer status and usage information.
 
 The package is distributed as `@0xkahi/pi-qol`; its published payload is the source tree plus `assets/config.schema.json`. Runtime behaviour is controlled by Zod-validated configuration loaded from global and project-level Pi config files.
 
@@ -11,7 +11,7 @@ The package is distributed as `@0xkahi/pi-qol`; its published payload is the sou
 - `package.json`: package metadata, Pi extension registration (`pi.extensions: ["./src/index.ts"]`), scripts, peer dependencies, and publish payload.
 - `src/index.ts`: runtime plugin entry point; creates the shared `ConfigLoader`, initializes config on `session_start`, and registers all feature modules.
 - `src/config-loader.ts`: configuration loading and validation pipeline for default/global/project overrides.
-- `src/extensions/*/index.ts`: feature registration functions for auto session naming, model selection, and custom footer rendering.
+- `src/extensions/*/index.ts`: feature registration functions for auto session naming, model selection, Context View, and custom footer rendering.
 - `scripts/build-schema.ts`: Bun build script that generates `assets/config.schema.json` from the canonical Zod config schema.
 - `assets/config.schema.json`: generated JSON Schema for editor/user-facing configuration validation.
 
@@ -32,6 +32,7 @@ The package is distributed as `@0xkahi/pi-qol`; its published payload is the sou
 | `src/extensions/` | Feature-level registration layer for auto session naming, model selection, and custom footer integration with Pi lifecycle events and UI hooks. | [View Map](src/extensions/codemap.md) |
 | `src/extensions/auto-session-name/` | Generates and applies concise session titles from the first user message using guarded, abortable model calls. | [View Map](src/extensions/auto-session-name/codemap.md) |
 | `src/extensions/model-select/` | Provides `/select-model` and event-driven interactive model picking with permanent Favourites, ordered group tabs, fuzzy search, and Search-only provider filtering. | [View Map](src/extensions/model-select/codemap.md) |
+| `src/extensions/context-view/` | Captures and classifies model context for a bounded half-height inline tabbed Usage/Injections interface opened by command or Vim event. | [View Map](src/extensions/context-view/codemap.md) |
 | `src/extensions/custom-footer/` | Replaces the default TUI footer with a status component for cwd/branch/session/model, token/cost/context, and subscription usage. | [View Map](src/extensions/custom-footer/codemap.md) |
 | `src/libs/` | Shared domain libraries; currently provider-agnostic subscription usage access for UI consumers. | [View Map](src/libs/codemap.md) |
 | `src/libs/subscription-usage/` | Fetches and normalizes AI-provider subscription/rate-limit usage behind a common facade. | [View Map](src/libs/subscription-usage/codemap.md) |
@@ -54,7 +55,7 @@ The package is distributed as `@0xkahi/pi-qol`; its published payload is the sou
 1. Pi loads `@0xkahi/pi-qol` through the `package.json` extension entry `./src/index.ts`.
 2. The default export creates one `ConfigLoader` and registers a `session_start` handler.
 3. On each session start, config is loaded from Pi-global and trusted project locations, shallow-merged by feature section, validated by `ConfigSchema`, and surfaced to the UI if invalid.
-4. `registerAutoSessionName`, `registerModelSelect`, and `registerCustomFooter` attach their own lifecycle, command, event, and UI handlers.
+4. `registerAutoSessionName`, `registerModelSelect`, `registerCustomFooter`, and `registerContextView` attach their own lifecycle, command, event, and UI handlers.
 5. Runtime feature code reads config through `ConfigLoader`; model-select resolves authenticated favourites into ordered group views and dynamic tabs, while shared utilities support model/auth/path/data parsing before features call Pi host APIs for session naming, model switching, notifications, and footer rendering.
 6. Build-time schema generation flows from `src/schemas/config.schema.ts` through `scripts/build-schema.ts` into `assets/config.schema.json`.
 

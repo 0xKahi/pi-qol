@@ -2,7 +2,7 @@
 
 ## Responsibility
 
-This directory defines the Zod-based configuration schemas for the pi-qol plugin. It is the single source of truth for the shape, defaults, and validation rules of user-facing configuration. It covers the top-level config object and per-feature schemas for `auto-session-name`, `model-select` (including favourites, groups, tab visibility, provider filtering, and layout), and `custom-footer`, plus reusable shared schema building blocks.
+This directory defines the Zod-based configuration schemas for the pi-qol plugin. It is the single source of truth for the shape, defaults, and validation rules of user-facing configuration. It covers the top-level config object and per-feature schemas for `auto-session-name`, `model-select` (including favourites, groups, tab visibility, provider filtering, and layout), `custom-footer`, and disabled-by-default `context-view`, plus reusable shared schema building blocks.
 
 ## Design Patterns
 
@@ -17,7 +17,7 @@ This directory defines the Zod-based configuration schemas for the pi-qol plugin
 
 1. **Input**: Raw JSON/user config enters the system.
 2. **Validation**: The top-level `ConfigSchema.parse()` validates the whole object, falling back to per-field defaults for missing keys.
-3. **Feature decomposition**: `ConfigSchema` delegates validation of each feature section to its dedicated schema (`AutoSessionNameConfigSchema`, `ModelSelectConfigSchema`, `CustomFooterConfigSchema`), which in turn use shared schemas (`ModelConfigSchema`, `ColorHexSchema`, `ReasoningLevelSchema`). `ModelSelectConfigSchema` also defines a `ModelSelectLayoutSchema` enum (`inline`/`overlay`) and `FavouriteModelSchema`, which omits `reasoning` from `ModelConfigSchema` and adds a `groups` array.
+3. **Feature decomposition**: `ConfigSchema` delegates validation of each feature section to its dedicated schema (`AutoSessionNameConfigSchema`, `ModelSelectConfigSchema`, `CustomFooterConfigSchema`, `ContextViewConfigSchema`), which in turn use shared schemas (`ModelConfigSchema`, `ColorHexSchema`, `ReasoningLevelSchema`). `ModelSelectConfigSchema` also defines a `ModelSelectLayoutSchema` enum (`inline`/`overlay`) and `FavouriteModelSchema`, which omits `reasoning` from `ModelConfigSchema` and adds a `groups` array.
 4. **Partial updates**: `PartialConfigSchema` and its feature-level partial variants allow validating incremental config changes without requiring a complete config object.
 5. **Output**: Validated `Config` and `PartialConfig` types are exported for use by config loading, merging, and runtime feature code elsewhere in the plugin.
 

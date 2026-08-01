@@ -4,11 +4,12 @@
 
 Top-level source root for `pi-qol`, a Pi coding-agent extension that layers small quality-of-life features onto the agent core.
 
-It coordinates three feature modules:
+It coordinates four feature modules:
 
 - **auto_session_name**: Generates and applies a concise session title from the user's first message before the agent runs.
 - **model_select**: Registers a `/select-model` command (plus a cross-extension event) for picking or searching available models with favourites, ordered custom groups, provider filtering, and an inline or overlay layout.
 - **custom_footer**: Replaces the default footer with a richer status bar showing cwd/branch/session, token/cost/cache stats, context-window usage, subscription-rate usage, and the current model/thinking level.
+- **context_view**: Lazily captures the initial provider context and opens a bounded half-height inline Usage/Injections interface through `/context-view` or `pi.vimKeys.event:pi-qol.context_view`.
 
 Shared concerns live here too: extension configuration loading, path resolution, model/auth resolution, and Zod schemas for every feature.
 
@@ -27,7 +28,7 @@ Shared concerns live here too: extension configuration loading, path resolution,
 1. **Bootstrap** (`index.ts`)
    - Creates `ConfigLoader`.
    - On every `session_start`, calls `config.initializeConfig(ctx)`; surfaces validation errors via `ctx.ui.notify`.
-   - Registers the three feature modules, passing the shared loader.
+   - Registers the four feature modules, passing the shared loader.
 
 2. **Config loading** (`config-loader.ts`, `utils/path.util.ts`, `schemas/*.schema.ts`)
    - Defaults → global `~/.pi/extensions/pi-qol/config.json` → project `.pi/extensions/pi-qol/config.json` (if trusted).
