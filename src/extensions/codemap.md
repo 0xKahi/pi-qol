@@ -9,6 +9,7 @@ Current features:
 - `auto-session-name` – automatically generates and applies a concise session title from the user’s first message.
 - `model-select` – provides an interactive `/select-model` command (and cross-extension activation hook) for choosing models from the registry with permanent Favourites, ordered custom groups, Search, provider filtering, and inline or overlay layout.
 - `custom-footer` – replaces the TUI footer with a richer status bar showing cwd, git branch, session name, model, token/cost usage, context-window usage, and subscription usage.
+- `context-view` – captures initial context contributions and displays Usage/Injections in a bounded half-height inline tabbed interface with Vim navigation.
 
 ## Design Patterns
 
@@ -19,7 +20,7 @@ Current features:
 - **TUI component pattern**: `custom-footer` constructs a `Component` that renders live on each frame, invalidating Pi’s default footer rendering.
 - **Guard classes**: `auto-session-name/guards.ts` isolates predicate logic (session name already set, child session, first user turn) for easy testing and readable early returns.
 - **Pure helpers / formatters**: `model-formatter.ts`, `token-stats.ts`, `model-lists.ts`, and `prompt.ts` keep transformation and rendering logic free of side effects.
-- **Cross-extension event bus**: `model-select` listens on a dedicated `pi.events` channel (`PI_VIM_KEY_EVENT_ID`) so other extensions can open the picker without invoking the slash command directly.
+- **Cross-extension event bus**: `model-select` and `context-view` listen on dedicated `pi.events` channels so other extensions can open their interfaces without invoking slash commands directly.
 - **Abortable async work**: `auto-session-name` keeps an `AbortController` and cancels in-flight title generation on `session_shutdown` or a new `before_agent_start`.
 
 ## Data & Control Flow
@@ -43,7 +44,13 @@ Current features:
    - The dialog uses one fuzzy query across dynamically visible Favourites/group/Search tabs, preserves per-tab selection, keeps the active tab represented at narrow widths, and renders in an inline or overlay layout; selection is applied via `pi.setModel`.
    - The event-bus handler captures the latest context so the picker can also be opened without a command context.
 
-4. **custom-footer flow**
+4. **context-view flow**
+   - Lazily activates only when `context_view.enabled` is true at session start.
+   - Captures owned prompt/tool/message inputs, freezes the first provider-context snapshot, and filters exact synthetic-probe identities.
+   - `/context-view` and `pi.vimKeys.event:pi-qol.context_view` share data preparation and open a bounded half-height Usage-first inline interface.
+   - The dialog retains Usage/Injections child state and routes Tab plus Vim navigation (`j/k`, `Ctrl+u/d`, `gg/G`).
+
+5. **custom-footer flow**
    - On `session_start`, installs a `CustomFooterComponent` factory via `ctx.ui.setFooter`.
    - Each render reads from `ExtensionContext` (cwd, session name, model, context usage, entries), `FooterDataProvider` (git branch, extension statuses, available providers), and a cached `SubscriptionUsageManager`.
    - The component builds and truncates lines to the available terminal width and requests re-renders via `tui.requestRender()` when branch changes or subscription usage updates.

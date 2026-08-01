@@ -1,5 +1,5 @@
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions, TextContent } from '@earendil-works/pi-ai';
-import { completeSimple } from '@earendil-works/pi-ai';
+import { completeSimple } from '@earendil-works/pi-ai/compat';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import type { ResolvedModel } from '../../utils/model-resolver.util';
 import { MAX_RETRIES, MAX_TITLE_LENGTH, TITLE_MAX_TOKENS } from './constants';

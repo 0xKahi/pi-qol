@@ -28,6 +28,10 @@ export class ConfigLoader {
     return this.config.custom_footer;
   }
 
+  getContextView(): Config['context_view'] {
+    return this.config.context_view;
+  }
+
   initializeConfig(ctx: ExtensionContext): { success: boolean; error?: string } {
     let merged: Config = this.defaultConfig;
 

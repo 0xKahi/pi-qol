@@ -254,6 +254,18 @@
           }
         }
       }
+    },
+    "context_view": {
+      "default": {
+        "enabled": false
+      },
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        }
+      }
     }
   }
 }

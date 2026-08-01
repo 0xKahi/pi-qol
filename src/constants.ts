@@ -6,6 +6,7 @@ const SUB_EXTENSION_IDS = {
   auto_session_name: 'auto_session_name',
   model_select: 'model_select',
   custom_footer: 'custom_footer',
+  context_view: 'context_view',
 } as const;
 
 export type SubExtentionIds = ObjectValues<typeof SUB_EXTENSION_IDS>;
