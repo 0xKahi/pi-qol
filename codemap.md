@@ -12,7 +12,8 @@ The package is distributed as `@0xkahi/pi-qol`; its published payload is the sou
 - `src/index.ts`: runtime plugin entry point; creates the shared `ConfigLoader`, initializes config on `session_start`, and registers all feature modules.
 - `src/config-loader.ts`: configuration loading and validation pipeline for default/global/project overrides.
 - `src/extensions/*/index.ts`: feature registration functions for auto session naming, model selection, Context View, and custom footer rendering.
-- `scripts/build-schema.ts`: Bun build script that generates `assets/config.schema.json` from the canonical Zod config schema.
+- `scripts/build-schema.ts`: Bun entry script that writes the generated configuration schema to `assets/config.schema.json`.
+- `scripts/build-schema-document.ts`: Pure schema-document builder that converts the canonical Zod config schema to draft-07 JSON Schema and adds package metadata.
 - `assets/config.schema.json`: generated JSON Schema for editor/user-facing configuration validation.
 
 ## Root-Level Files
@@ -29,10 +30,11 @@ The package is distributed as `@0xkahi/pi-qol`; its published payload is the sou
 | Directory | Responsibility Summary | Detailed Map |
 | --- | --- | --- |
 | `src/` | Top-level runtime source for the Pi extension; bootstraps config and registers all feature modules plus shared concerns. | [View Map](src/codemap.md) |
-| `src/extensions/` | Feature-level registration layer for auto session naming, model selection, and custom footer integration with Pi lifecycle events and UI hooks. | [View Map](src/extensions/codemap.md) |
+| `src/extensions/` | Feature-level registration layer for auto session naming, model selection, context inspection, and custom footer integration with Pi lifecycle events and UI hooks. | [View Map](src/extensions/codemap.md) |
 | `src/extensions/auto-session-name/` | Generates and applies concise session titles from the first user message using guarded, abortable model calls. | [View Map](src/extensions/auto-session-name/codemap.md) |
 | `src/extensions/model-select/` | Provides `/select-model` and event-driven interactive model picking with permanent Favourites, ordered group tabs, fuzzy search, and Search-only provider filtering. | [View Map](src/extensions/model-select/codemap.md) |
 | `src/extensions/context-view/` | Captures and classifies model context for a bounded half-height inline tabbed Usage/Injections interface opened by command or Vim event. | [View Map](src/extensions/context-view/codemap.md) |
+| `src/extensions/context-view/ui/` | Implements the retained Usage/Injections TUI views, proportional usage map, previews, layout, and shared Vim-style navigation. | [View Map](src/extensions/context-view/ui/codemap.md) |
 | `src/extensions/custom-footer/` | Replaces the default TUI footer with a status component for cwd/branch/session/model, token/cost/context, and subscription usage. | [View Map](src/extensions/custom-footer/codemap.md) |
 | `src/libs/` | Shared domain libraries; currently provider-agnostic subscription usage access for UI consumers. | [View Map](src/libs/codemap.md) |
 | `src/libs/subscription-usage/` | Fetches and normalizes AI-provider subscription/rate-limit usage behind a common facade. | [View Map](src/libs/subscription-usage/codemap.md) |
@@ -47,7 +49,7 @@ The package is distributed as `@0xkahi/pi-qol`; its published payload is the sou
 - **Pi plugin registration**: `src/index.ts` wires feature factories into the `ExtensionAPI`; features are activated by host lifecycle events rather than direct imports from the root.
 - **Configuration layering**: defaults, global config, and trusted project config are merged and validated through Zod schemas before feature code reads them.
 - **Feature isolation**: each extension owns its registration, state, helpers, and UI behaviour while sharing common config/model/path utilities.
-- **Event-driven UI integration**: features listen to `session_start`, `session_shutdown`, `before_agent_start`, slash commands, and a cross-extension event id for model picker activation.
+- **Event-driven UI integration**: features listen to Pi lifecycle events, slash commands, and cross-extension event ids for model picker and Context View activation.
 - **Strategy and facade for provider APIs**: subscription usage uses provider-specific strategies behind a normalized `SubscriptionUsageApi` so the footer consumes one common rate-window model.
 
 ## Data & Control Flow
@@ -57,7 +59,7 @@ The package is distributed as `@0xkahi/pi-qol`; its published payload is the sou
 3. On each session start, config is loaded from Pi-global and trusted project locations, shallow-merged by feature section, validated by `ConfigSchema`, and surfaced to the UI if invalid.
 4. `registerAutoSessionName`, `registerModelSelect`, `registerCustomFooter`, and `registerContextView` attach their own lifecycle, command, event, and UI handlers.
 5. Runtime feature code reads config through `ConfigLoader`; model-select resolves authenticated favourites into ordered group views and dynamic tabs, while shared utilities support model/auth/path/data parsing before features call Pi host APIs for session naming, model switching, notifications, and footer rendering.
-6. Build-time schema generation flows from `src/schemas/config.schema.ts` through `scripts/build-schema.ts` into `assets/config.schema.json`.
+6. Build-time schema generation flows from `src/schemas/config.schema.ts` through `scripts/build-schema-document.ts` and `scripts/build-schema.ts` into `assets/config.schema.json`.
 
 ## Integration Points
 
