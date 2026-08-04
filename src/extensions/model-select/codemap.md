@@ -13,11 +13,11 @@ This extension implements the `/select-model` command and its interactive picker
   - `index.ts`: orchestrates activation, command handling, applying the selected model, setting default reasoning, and bridging registry errors into the dialog.
   - `model-lists.ts`: queries the registry and prepares favourite, grouped favourite, and searchable model lists; validates favourite entries against the registry and configured auth.
   - `model-formatter.ts`: pure static utilities for labels, descriptions, sorting, token formatting, capability detection, and search-text generation.
-  - `model-select-dialog.ts`: TUI component that builds dynamic visible tabs, renders a width-aware tab viewport, and translates user input into selection events.
+  - `model-select-dialog.ts`: thin `ModalDialog` (shared modal library) configuration: one `ListTab` per section (permanent Favourites, groups, Search), a shared filter input, notices for config warnings, and per-section row/empty-state/footer hooks.
   - `constants.ts`: command name, cross-extension event ID, and dialog rendering limits.
   - `types.ts`: shared item, list, tab, and dialog option types.
-- **TUI Component pattern**: `ModelSelectDialog` implements `Component` and `Focusable`, rendering itself into lines and delegating focus to an internal `Input` component.
-- **Layout-aware rendering**: the dialog renders either an inline bordered panel or a centered overlay depending on the `model_select.layout` config value.
+- **Modal library delegation**: `ModelSelectDialog` implements `Component` and `Focusable` by delegating to a `ModalDialog` from `src/libs/modal/`; the shell owns the tab strip, tab cycling, keybinding-driven navigation (wrap-around selection via `ListTab`), the shared filter `Input`, and the help footer.
+- **Layout-aware rendering**: the dialog uses the shell's `inline` frame or `bordered` frame (centered by host overlay options) depending on the `model_select.layout` config value.
 - **Defensive guards**: checks feature enablement, UI availability, idle state (`waitForIdle`), exact-match short-circuit, and auth availability before applying a model.
 
 ## Data & Control Flow

@@ -1,28 +1,31 @@
 /** Forked from dimk90/pi-context-view at f6f007b867212bcf81a61519c8e40ce209cdd608 (MIT). */
 /**
- * Focused `/context usage` view: estimated context composition with a
+ * Focused `/context usage` tab: estimated context composition with a
  * proportional context-window map, pi-reported metadata, selectable category
- * rows, and an Enter-opened chronological content preview.
+ * rows, and Enter-opened chronological content previews. Modal plumbing —
+ * frame, navigation dispatch, preview layers, dismissal — is owned by the
+ * shared modal library; this tab owns only its content.
  */
 import type { Theme, ThemeColor } from '@earendil-works/pi-coding-agent';
-import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
+import { matchesKey, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 
-import type { ContextUsageSnapshot, UsageCategory, UsagePreviewEntry } from '../model';
-import { collectPreviewEntries } from '../usage';
-import { ListNavigator, normalizeInlineText, normalizePreviewText, PreviewScroller } from './injections-model';
 import {
   BODY_INDENT,
   calculateViewport,
-  DEFAULT_TERMINAL_ROWS,
   fitLine,
-  fitToTerminalHeight,
-  hintRow,
-  normalizeTerminalRows,
-  STEP_KEY_HINT,
+  type Hint,
+  ListNavigator,
+  type ModalTab,
+  type ModalTabContext,
+  type NavigationAction,
+  PreviewLayer,
+  RenderCache,
   spreadLine,
   wrapDescriptionLines,
-} from './layout';
-import type { NavigationAction } from './navigation';
+} from '../../../libs/modal';
+import type { ContextUsageSnapshot, UsageCategory, UsagePreviewEntry } from '../model';
+import { collectPreviewEntries } from '../usage';
+import { normalizeInlineText, normalizePreviewText } from './injections-model';
 import { splitSkillPreview } from './skill-preview';
 import { buildUsageMap, calculateFitMapScale, DEFAULT_MAP_COLUMNS, DEFAULT_MAP_ROWS, type UsageMapCell } from './usage-map';
 
@@ -33,10 +36,8 @@ const INVISIBLE_REASONING_DESCRIPTION =
   '≈ is a provider-reported count; ~ is a rough approximation when no breakdown ' +
   'is reported and excluded from category totals. ' +
   'Encoded replaces Reasoning when the provider replays encrypted reasoning with its message.';
-const USAGE_TAIL_FIXED_LINE_COUNT = 5;
-const DETAIL_CATEGORY_HEADER_LINE_COUNT = 1;
-const PREVIEW_FIXED_LINE_COUNT = 8;
 const PREVIEW_ENTRY_MAX_LINES = 20;
+const DETAIL_CATEGORY_HEADER_LINE_COUNT = 1;
 const CURSOR_COLUMN_WIDTH = 2;
 const MAX_LEGEND_VALUE_COLUMN = 32;
 const LEGEND_VALUE_GAP = 2;
@@ -55,7 +56,6 @@ const BREAKDOWN_MARKER = '•';
 /** Everything the Usage view renders, classified once when the view opens. */
 export interface UsageViewInput {
   readonly usage: ContextUsageSnapshot;
-  readonly degradedReason?: string;
 }
 
 /** View-local denominator selected for the context map. */
@@ -85,82 +85,52 @@ interface LegendColumns {
   readonly tokenWidth: number;
 }
 
-/** Stateful Usage tab retained by ContextViewDialog. */
-export class UsageView {
+/** Stateful Usage tab retained by the Context View dialog. */
+export class UsageView implements ModalTab {
   private readonly theme: Theme;
-  private readonly input: UsageViewInput;
-  private readonly done: (result: undefined) => void;
-  private readonly getTerminalRows: () => number;
   private readonly usage: ContextUsageSnapshot;
   private readonly legendRows: readonly LegendRow[];
   private readonly navigator: ListNavigator;
-  private readonly previewScroller = new PreviewScroller();
+  private readonly cache = new RenderCache();
   private readonly fitMapScale: number | undefined;
+  private context: ModalTabContext | undefined;
   private mapScale: UsageMapScale = 'window';
   private currentWidth: number | undefined;
-  private previewRow: CategoryLegendRow | undefined;
   private cachedPreviewEntries: readonly UsagePreviewEntry[] | undefined;
   private previewLines: string[] | undefined;
   private previewWrapWidth: number | undefined;
-  private cachedWidth: number | undefined;
-  private cachedTerminalRows: number | undefined;
-  private cachedLines: string[] | undefined;
 
   /** Create a view over one precomputed usage snapshot. */
-  public constructor(
-    theme: Theme,
-    input: UsageViewInput,
-    done: (result: undefined) => void,
-    getTerminalRows: () => number = () => process.stdout.rows ?? DEFAULT_TERMINAL_ROWS,
-  ) {
+  public constructor(theme: Theme, input: UsageViewInput) {
     this.theme = theme;
-    this.input = input;
-    this.done = done;
-    this.getTerminalRows = getTerminalRows;
     this.usage = input.usage;
-    this.fitMapScale = calculateFitMapScale(this.usage);
     this.legendRows = this.buildLegendRows();
-    // The trailing buffer/free block has no preview: it scrolls with the list but is never selectable.
     const selectableCount = this.legendRows.filter(row => row.type === 'category').length;
     this.navigator = new ListNavigator(this.legendRows.length, 1, selectableCount);
+    this.fitMapScale = calculateFitMapScale(this.usage);
   }
 
-  /** Handle category navigation, preview opening, and close keys. */
+  public get label(): string {
+    return '[Usage]';
+  }
+
+  public attach(context: ModalTabContext): void {
+    this.context = context;
+  }
+
+  public hints(): Hint[] {
+    const hints: Hint[] = [['Enter', 'Preview']];
+    if (this.canToggleMapScale(this.currentWidth)) hints.push(['Z', 'Zoom']);
+    return hints;
+  }
+
+  /** Handle the view-local map-zoom key; navigation arrives as actions. */
   public handleInput(data: string): void {
-    if (this.previewRow !== undefined) {
-      this.handlePreviewInput(data);
-      return;
-    }
-    if (matchesKey(data, Key.escape) || data === 'q') {
-      this.done(undefined);
-      return;
-    }
-    if (matchesKey(data, 'z')) {
-      this.toggleMapScale();
-    } else if (matchesKey(data, Key.enter)) {
-      this.openPreview();
-    }
+    if (matchesKey(data, 'z')) this.toggleMapScale();
   }
 
-  /** Apply semantic movement in either the category list or its preview. */
+  /** Apply semantic movement in the category list, or open a preview layer. */
   public handleNavigation(action: NavigationAction): void {
-    if (this.previewRow !== undefined) {
-      const changed =
-        action === 'step-back'
-          ? this.previewScroller.scrollBy(-1)
-          : action === 'step-forward'
-            ? this.previewScroller.scrollBy(1)
-            : action === 'page-back'
-              ? this.previewScroller.page(-1)
-              : action === 'page-forward'
-                ? this.previewScroller.page(1)
-                : action === 'first'
-                  ? this.previewScroller.scrollTo(0)
-                  : this.previewScroller.scrollTo(this.previewScroller.maxOffset);
-      if (changed) this.clearCache();
-      return;
-    }
-
     const changed =
       action === 'step-back'
         ? this.navigator.moveBy(-1)
@@ -172,46 +142,34 @@ export class UsageView {
               ? this.navigator.page(1)
               : action === 'first'
                 ? this.navigator.moveTo(0)
-                : this.navigator.moveTo(this.legendRows.length - 1);
-    if (changed) this.clearCache();
+                : action === 'last'
+                  ? this.navigator.moveTo(this.legendRows.length - 1)
+                  : false;
+    if (changed) this.cache.clear();
+    if (action === 'confirm') this.openPreview();
   }
 
-  /** Render a cached tab frame for the current width and overlay height. */
-  public render(width: number): string[] {
+  /** Render a cached tab frame for the current width and content height. */
+  public render(width: number, height: number | undefined): string[] {
     this.currentWidth = width;
-    const terminalRows = normalizeTerminalRows(this.getTerminalRows());
-    if (this.cachedLines !== undefined && this.cachedWidth === width && this.cachedTerminalRows === terminalRows) {
-      return this.cachedLines;
-    }
+    const cached = this.cache.read(width, height);
+    if (cached !== undefined) return cached;
 
-    const lines =
-      this.previewRow === undefined ? this.renderDashboard(width, terminalRows) : this.renderPreview(width, terminalRows, this.previewRow);
-    this.cachedWidth = width;
-    this.cachedTerminalRows = terminalRows;
-    this.cachedLines = lines;
-    return lines;
+    const terminalRows = height ?? 20;
+    const header = this.headerLines(width);
+    const description = wrapDescriptionLines(this.theme, USAGE_DESCRIPTION, 'dim', width);
+    const availableDashboardRows = Math.max(1, terminalRows - header.length - description.length - 2);
+    const dashboard = this.dashboardLines(width, availableDashboardRows).slice(0, availableDashboardRows);
+    while (dashboard.length < availableDashboardRows) dashboard.push('');
+
+    return this.cache.write(width, height, [...header, '', ...dashboard, '', ...description]);
   }
 
   /** Invalidate theme-dependent rendered output. */
   public invalidate(): void {
     this.previewLines = undefined;
     this.previewWrapWidth = undefined;
-    this.clearCache();
-  }
-
-  // === Dashboard mode ===
-
-  /** Full map/legend frame with navigation hints. */
-  private renderDashboard(width: number, terminalRows: number): string[] {
-    const theme = this.theme;
-    const border = theme.fg('border', '─'.repeat(Math.max(1, width)));
-    const prefix = [border, '', ...this.headerLines(width), '', ...this.degradedWarningLines(width)];
-    const descriptionLines = wrapDescriptionLines(theme, USAGE_DESCRIPTION, 'dim', width);
-    const availableDashboardRows = Math.max(1, terminalRows - prefix.length - USAGE_TAIL_FIXED_LINE_COUNT - descriptionLines.length);
-    const dashboard = this.dashboardLines(width, availableDashboardRows).slice(0, availableDashboardRows);
-    while (dashboard.length < availableDashboardRows) dashboard.push('');
-    const tail = ['', ...descriptionLines, '', this.fit(hintRow(theme, this.dashboardHints(width)), width), '', border];
-    return fitToTerminalHeight([...prefix, ...dashboard, ...tail], terminalRows, border);
+    this.cache.clear();
   }
 
   /** Accent title with responsive model, zoom label, and true-window usage metadata. */
@@ -254,7 +212,7 @@ export class UsageView {
   private toggleMapScale(): void {
     if (!this.canToggleMapScale(this.currentWidth)) return;
     this.mapScale = this.mapScale === 'window' ? 'fit' : 'window';
-    this.clearCache();
+    this.cache.clear();
   }
 
   /** Whether zoom can help and its binding is visible at this width. */
@@ -274,19 +232,6 @@ export class UsageView {
     const contextWindow = this.usage.reported?.contextWindow;
     if (this.mapScale !== 'fit' || !this.canToggleMapScale(width) || contextWindow === undefined || this.fitMapScale === undefined) return undefined;
     return this.theme.fg('mdHeading', `Zoom ${formatTokens(contextWindow)} → ${formatTokens(this.fitMapScale)}`);
-  }
-
-  /** Dashboard hints with Zoom immediately before Close when the binding is active. */
-  private dashboardHints(width: number): Array<readonly [string, string]> {
-    const hints: Array<readonly [string, string]> = [
-      [STEP_KEY_HINT, 'Navigate'],
-      ['Ctrl+u/d', 'Page'],
-      ['gg/G', 'Bounds'],
-      ['Enter', 'Preview'],
-    ];
-    if (this.canToggleMapScale(width)) hints.push(['Z', 'Zoom']);
-    hints.push(['Esc', 'Close']);
-    return hints;
   }
 
   /** Render the map and legend side by side, or only details when width/window data is insufficient. */
@@ -466,84 +411,25 @@ export class UsageView {
     return this.theme.fg(categoryColor(cell.categoryId), glyph);
   }
 
-  /** Wrapped degraded-capture warning placed above the dashboard. */
-  private degradedWarningLines(width: number): string[] {
-    if (this.input.degradedReason === undefined) return [];
-    const reason = normalizeInlineText(this.input.degradedReason);
-    return wrapTextWithAnsi(this.theme.fg('warning', `${BODY_INDENT}${reason}`), width);
-  }
+  // === Preview ===
 
-  // === Preview mode ===
-
-  /** Preview scrolling and return-to-list keys. */
-  private handlePreviewInput(data: string): void {
-    if (matchesKey(data, Key.escape) || data === 'q') {
-      this.closePreview();
-      return;
-    }
-  }
-
-  /** Open the selected category's content preview; free space has no preview. */
+  /** Open the selected category's content preview as a shell-managed layer. */
   private openPreview(): void {
     const row = this.legendRows[this.navigator.selected];
     if (row === undefined || row.type !== 'category') return;
-    this.previewRow = row;
     this.cachedPreviewEntries = undefined;
     this.previewLines = undefined;
     this.previewWrapWidth = undefined;
-    this.previewScroller.reset();
-    this.clearCache();
-  }
 
-  /** Return to the list with the same selected row. */
-  private closePreview(): void {
-    this.previewRow = undefined;
-    this.cachedPreviewEntries = undefined;
-    this.previewLines = undefined;
-    this.previewWrapWidth = undefined;
-    this.clearCache();
-  }
-
-  /** Scrollable chronological content stream for one category. */
-  private renderPreview(width: number, terminalRows: number, row: CategoryLegendRow): string[] {
-    const theme = this.theme;
-    const border = theme.fg('border', '─'.repeat(Math.max(1, width)));
-    const body = this.previewBodyLines(width, row);
-    const descriptionLines = this.previewDescriptionLines(width, row);
-    const descriptionLineCount = descriptionLines.length === 0 ? 0 : descriptionLines.length + 1;
-    const viewport = calculateViewport(body.length, terminalRows, PREVIEW_FIXED_LINE_COUNT, descriptionLineCount);
-    this.previewScroller.setExtent(body.length, viewport.visibleCount);
-
-    const lines: string[] = [border, ''];
-    const title = theme.fg('accent', theme.bold(normalizeInlineText(row.category.label)));
     const percent = this.plainLegendPercent(row.category.tokens);
-    const meta = theme.fg('muted', `${formatTokens(row.category.tokens)}${percent === '' ? '' : ` · ${percent}`} `);
-    lines.push(spreadLine(title, meta, width));
-    lines.push('');
-
-    const start = this.previewScroller.offset;
-    for (let index = start; index < start + viewport.visibleCount; index++) {
-      lines.push(body[index] ?? '');
-    }
-
-    if (viewport.showScroll) {
-      lines.push(this.fit(theme.fg('dim', `${BODY_INDENT}(${this.previewScroller.visibleEnd}/${body.length})`), width));
-    }
-    if (descriptionLines.length > 0) lines.push('', ...descriptionLines);
-    lines.push('');
-    lines.push(
-      this.fit(
-        hintRow(theme, [
-          [STEP_KEY_HINT, 'Scroll'],
-          ['Ctrl+u/d', 'Page'],
-          ['gg/G', 'Bounds'],
-          ['Esc', 'Back'],
-        ]),
-        width,
-      ),
+    this.context?.pushLayer(
+      new PreviewLayer(this.theme, {
+        title: () => this.theme.fg('accent', this.theme.bold(normalizeInlineText(row.category.label))),
+        meta: () => this.theme.fg('muted', `${formatTokens(row.category.tokens)}${percent === '' ? '' : ` · ${percent}`}`),
+        body: width => this.previewBodyLines(width, row),
+        description: width => this.previewDescriptionLines(width, row),
+      }),
     );
-    lines.push('', border);
-    return fitToTerminalHeight(lines, terminalRows, border);
   }
 
   /** Cached wrapped entry stream: bracket headers plus capped sanitized content. */
@@ -637,13 +523,6 @@ export class UsageView {
   /** Truncate one rendered line to the supplied width. */
   private fit(line: string, width: number): string {
     return fitLine(line, width);
-  }
-
-  /** Clear render-cache keys after data, theme, or input changes. */
-  private clearCache(): void {
-    this.cachedWidth = undefined;
-    this.cachedTerminalRows = undefined;
-    this.cachedLines = undefined;
   }
 }
 

@@ -1,37 +1,29 @@
 /** Forked from dimk90/pi-context-view at f6f007b867212bcf81a61519c8e40ce209cdd608 (MIT). */
 /**
- * Focused `/context injections` view: hierarchical Initial snapshot rows. The
+ * Focused `/context injections` tab: hierarchical Initial snapshot rows. The
  * Runtime label stays hidden until the runtime-inspection roadmap step.
+ * Modal plumbing — frame, navigation dispatch, previews, dismissal — is owned
+ * by the shared modal library; this tab owns only its content.
  */
 import type { Theme } from '@earendil-works/pi-coding-agent';
-import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
+import { visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 
-import type { InitialSnapshot, InjectionItem } from '../model';
-import {
-  buildInjectionRows,
-  collectItemsById,
-  type InjectionRow,
-  ListNavigator,
-  normalizeInlineText,
-  normalizePreviewText,
-  PreviewScroller,
-} from './injections-model';
 import {
   BODY_INDENT,
   calculateViewport,
-  DEFAULT_TERMINAL_ROWS,
   fitLine,
-  fitToTerminalHeight,
-  hintRow,
-  normalizeTerminalRows,
-  STEP_KEY_HINT,
-  spreadLine,
+  type Hint,
+  ListNavigator,
+  type ModalTab,
+  type ModalTabContext,
+  type NavigationAction,
+  PreviewLayer,
+  RenderCache,
   wrapDescriptionLines,
-} from './layout';
-import type { NavigationAction } from './navigation';
+} from '../../../libs/modal';
+import type { InitialSnapshot, InjectionItem } from '../model';
+import { buildInjectionRows, collectItemsById, type InjectionRow, normalizeInlineText, normalizePreviewText } from './injections-model';
 
-const LIST_FIXED_LINE_COUNT = 10;
-const PREVIEW_FIXED_LINE_COUNT = 8;
 const LIST_DESCRIPTION = 'Injections into the model context for the first turn, with token estimates.';
 const CURSOR_COLUMN_WIDTH = 2;
 const MAX_TOKEN_VALUE_COLUMN = 54;
@@ -40,7 +32,6 @@ const TOKEN_LEADER_GAP = 4;
 /** Everything the Injections view renders. */
 export interface InjectionsViewInput {
   readonly snapshot: InitialSnapshot;
-  readonly degradedReason?: string;
 }
 
 /** Shared token-value column measured after the fixed cursor column. */
@@ -48,71 +39,43 @@ interface InjectionColumns {
   readonly value: number;
 }
 
-/** Stateful Injections tab retained by ContextViewDialog. */
-export class InjectionsView {
+/** Stateful Injections tab retained by the Context View dialog. */
+export class InjectionsView implements ModalTab {
   private readonly theme: Theme;
-  private readonly input: InjectionsViewInput;
-  private readonly done: (result: undefined) => void;
-  private readonly getTerminalRows: () => number;
   private readonly rows: InjectionRow[];
   private readonly navigator: ListNavigator;
   private readonly itemsById: Map<string, InjectionItem>;
-  private readonly previewScroller = new PreviewScroller();
+  private readonly cache = new RenderCache();
+  private context: ModalTabContext | undefined;
   private previewItem: InjectionItem | undefined;
   private previewLines: string[] | undefined;
   private previewWrapWidth: number | undefined;
-  private cachedWidth: number | undefined;
-  private cachedTerminalRows: number | undefined;
-  private cachedLines: string[] | undefined;
 
-  public constructor(
-    theme: Theme,
-    input: InjectionsViewInput,
-    done: (result: undefined) => void,
-    getTerminalRows: () => number = () => process.stdout.rows ?? DEFAULT_TERMINAL_ROWS,
-  ) {
+  public constructor(theme: Theme, input: InjectionsViewInput) {
     this.theme = theme;
-    this.input = input;
-    this.done = done;
-    this.getTerminalRows = getTerminalRows;
     this.rows = buildInjectionRows(input.snapshot);
     this.navigator = new ListNavigator(this.rows.length, 1, this.rows.length - 2);
     this.itemsById = collectItemsById(input.snapshot);
   }
 
-  public handleInput(data: string): void {
-    if (this.previewItem !== undefined) {
-      this.handlePreviewInput(data);
-      return;
-    }
-    if (matchesKey(data, Key.escape) || data === 'q') {
-      this.done(undefined);
-      return;
-    }
-    if (matchesKey(data, Key.enter)) {
-      this.openPreview();
-    }
+  public get label(): string {
+    return '[Injections]';
   }
 
-  /** Apply semantic movement in either the hierarchy or its preview. */
-  public handleNavigation(action: NavigationAction): void {
-    if (this.previewItem !== undefined) {
-      const changed =
-        action === 'step-back'
-          ? this.previewScroller.scrollBy(-1)
-          : action === 'step-forward'
-            ? this.previewScroller.scrollBy(1)
-            : action === 'page-back'
-              ? this.previewScroller.page(-1)
-              : action === 'page-forward'
-                ? this.previewScroller.page(1)
-                : action === 'first'
-                  ? this.previewScroller.scrollTo(0)
-                  : this.previewScroller.scrollTo(this.previewScroller.maxOffset);
-      if (changed) this.clearCache();
-      return;
-    }
+  public attach(context: ModalTabContext): void {
+    this.context = context;
+  }
 
+  public hints(): Hint[] {
+    return [['Enter', 'Preview']];
+  }
+
+  public handleInput(_data: string): void {
+    // All Injections keys are semantic navigation actions handled by the shell.
+  }
+
+  /** Apply semantic movement in the hierarchy, or open an item preview. */
+  public handleNavigation(action: NavigationAction): void {
     const changed =
       action === 'step-back'
         ? this.navigator.moveBy(-1)
@@ -124,73 +87,41 @@ export class InjectionsView {
               ? this.navigator.page(1)
               : action === 'first'
                 ? this.navigator.moveTo(0)
-                : this.navigator.moveTo(this.rows.length - 1);
-    if (changed) this.clearCache();
+                : action === 'last'
+                  ? this.navigator.moveTo(this.rows.length - 1)
+                  : false;
+    if (changed) this.cache.clear();
+    if (action === 'confirm') this.openPreview();
   }
 
-  public render(width: number): string[] {
-    const terminalRows = normalizeTerminalRows(this.getTerminalRows());
-    if (this.cachedLines !== undefined && this.cachedWidth === width && this.cachedTerminalRows === terminalRows) {
-      return this.cachedLines;
-    }
-    if (this.previewItem !== undefined) {
-      const lines = this.renderPreview(width, terminalRows, this.previewItem);
-      this.cachedWidth = width;
-      this.cachedTerminalRows = terminalRows;
-      this.cachedLines = lines;
-      return lines;
-    }
-    const theme = this.theme;
-    const border = theme.fg('border', '─'.repeat(Math.max(1, width)));
+  public render(width: number, height: number | undefined): string[] {
+    const cached = this.cache.read(width, height);
+    if (cached !== undefined) return cached;
+
+    const terminalRows = height ?? this.rows.length + 10;
     const headerLines = this.headerLines(width);
-    const warningLines = this.degradedWarningLines(width);
-    const descriptionLines = this.descriptionLines(width);
-    const extraLineCount = headerLines.length - 1 + warningLines.length + descriptionLines.length - 1;
-    const viewport = calculateViewport(this.rows.length, terminalRows, LIST_FIXED_LINE_COUNT, extraLineCount);
+    const descriptionLines = wrapDescriptionLines(this.theme, LIST_DESCRIPTION, 'dim', width);
+    const viewport = calculateViewport(this.rows.length, terminalRows, headerLines.length + descriptionLines.length + 2);
     this.navigator.setVisibleCount(viewport.visibleCount);
-    const lines: string[] = [border, '', ...headerLines, '', ...warningLines];
+
+    const lines: string[] = [...headerLines, ''];
     const listLines = this.listLines(width);
     lines.push(...listLines);
     if (viewport.showScroll) lines.push(this.scrollLine(width));
     const paddingCount = viewport.visibleCount - listLines.length;
     for (let pad = 0; pad < paddingCount; pad++) lines.push('');
-    lines.push('');
-    lines.push(...descriptionLines);
-    lines.push('');
-    lines.push(
-      this.fit(
-        hintRow(this.theme, [
-          [STEP_KEY_HINT, 'Navigate'],
-          ['Ctrl+u/d', 'Page'],
-          ['gg/G', 'Bounds'],
-          ['Enter', 'Preview'],
-          ['Esc', 'Close'],
-        ]),
-        width,
-      ),
-    );
-    lines.push('', border);
+    lines.push('', ...descriptionLines);
 
-    const fittedLines = fitToTerminalHeight(lines, terminalRows, border);
-    this.cachedWidth = width;
-    this.cachedTerminalRows = terminalRows;
-    this.cachedLines = fittedLines;
-    return fittedLines;
+    return this.cache.write(width, height, lines);
   }
 
   public invalidate(): void {
-    this.clearCache();
+    this.cache.clear();
   }
 
-  // === Preview mode ===
+  // === Preview ===
 
-  private handlePreviewInput(data: string): void {
-    if (matchesKey(data, Key.escape) || data === 'q') {
-      this.closePreview();
-      return;
-    }
-  }
-
+  /** Open the selected item's content preview as a shell-managed layer. */
   private openPreview(): void {
     const row = this.rows[this.navigator.selected];
     if (row?.kind !== 'item') return;
@@ -199,56 +130,22 @@ export class InjectionsView {
     this.previewItem = item;
     this.previewLines = undefined;
     this.previewWrapWidth = undefined;
-    this.previewScroller.reset();
-    this.clearCache();
-  }
 
-  private closePreview(): void {
-    this.previewItem = undefined;
-    this.previewLines = undefined;
-    this.previewWrapWidth = undefined;
-    this.clearCache();
-  }
-
-  private renderPreview(width: number, terminalRows: number, item: InjectionItem): string[] {
-    const theme = this.theme;
-    const border = theme.fg('border', '─'.repeat(Math.max(1, width)));
-    const wrapped = this.getPreviewLines(width, item);
-    const viewport = calculateViewport(wrapped.length, terminalRows, PREVIEW_FIXED_LINE_COUNT);
-    this.previewScroller.setExtent(wrapped.length, viewport.visibleCount);
-
-    const lines: string[] = [border, ''];
-    const title = theme.fg('accent', theme.bold(normalizeInlineText(item.label)));
     const source = normalizeInlineText(item.source.label);
-    const meta = theme.fg('muted', `${source} · ${item.tokens.toLocaleString('en-US')} tokens `);
-    lines.push(this.spread(title, meta, width));
-    lines.push('');
-
-    const start = this.previewScroller.offset;
-    for (let index = start; index < start + viewport.visibleCount; index++) {
-      lines.push(wrapped[index] ?? '');
-    }
-
-    if (viewport.showScroll) lines.push(this.previewScrollLine(width, wrapped.length));
-    lines.push('');
-    lines.push(
-      this.fit(
-        hintRow(this.theme, [
-          [STEP_KEY_HINT, 'Scroll'],
-          ['Ctrl+u/d', 'Page'],
-          ['gg/G', 'Bounds'],
-          ['Esc', 'Back'],
-        ]),
-        width,
-      ),
+    this.context?.pushLayer(
+      new PreviewLayer(this.theme, {
+        title: () => this.theme.fg('accent', this.theme.bold(normalizeInlineText(item.label))),
+        meta: () => this.theme.fg('muted', `${source} · ${item.tokens.toLocaleString('en-US')} tokens`),
+        body: width => this.getPreviewLines(width, item),
+      }),
     );
-    lines.push('', border);
-    return fitToTerminalHeight(lines, terminalRows, border);
   }
 
   private getPreviewLines(width: number, item: InjectionItem): string[] {
     const wrapWidth = Math.max(10, width - BODY_INDENT.length - 1);
-    if (this.previewLines !== undefined && this.previewWrapWidth === wrapWidth) return this.previewLines;
+    if (this.previewItem === item && this.previewLines !== undefined && this.previewWrapWidth === wrapWidth) {
+      return this.previewLines;
+    }
     const text = normalizePreviewText(item.text);
     const lines: string[] = [];
     for (const paragraph of text.split('\n')) {
@@ -264,10 +161,7 @@ export class InjectionsView {
     return lines;
   }
 
-  private previewScrollLine(width: number, totalLines: number): string {
-    if (!this.previewScroller.hasOverflow) return this.fit('', width);
-    return this.fit(this.theme.fg('dim', `${BODY_INDENT}(${this.previewScroller.visibleEnd}/${totalLines})`), width);
-  }
+  // === List rendering ===
 
   /** Keep title/label together when possible; give the narrow label its own breathing room. */
   private headerLines(width: number): string[] {
@@ -364,33 +258,7 @@ export class InjectionsView {
     return this.fit(this.theme.fg('dim', `${BODY_INDENT}(${this.navigator.selectedOrdinal + 1}/${this.navigator.selectableCount})`), width);
   }
 
-  /** Wrapped degraded-capture reason placed below the dialog header. */
-  private degradedWarningLines(width: number): string[] {
-    if (this.input.degradedReason === undefined) return [];
-    const reason = this.theme.fg('warning', `${BODY_INDENT}${normalizeInlineText(this.input.degradedReason)}`);
-    return wrapTextWithAnsi(reason, width);
-  }
-
-  /** Wrapped dialog description, including the degraded-capture indicator when needed. */
-  private descriptionLines(width: number): string[] {
-    const lines = wrapDescriptionLines(this.theme, LIST_DESCRIPTION, 'dim', width);
-    if (this.input.degradedReason !== undefined) {
-      lines.push(...wrapDescriptionLines(this.theme, '[Degraded: pi-native fallback used]', 'warning', width));
-    }
-    return lines;
-  }
-
-  private spread(left: string, right: string, width: number): string {
-    return spreadLine(left, right, width);
-  }
-
   private fit(line: string, width: number): string {
     return fitLine(line, width);
-  }
-
-  private clearCache(): void {
-    this.cachedWidth = undefined;
-    this.cachedTerminalRows = undefined;
-    this.cachedLines = undefined;
   }
 }

@@ -1,14 +1,13 @@
 /** Forked from dimk90/pi-context-view at f6f007b867212bcf81a61519c8e40ce209cdd608 (MIT). */
 /**
- * Shared pi-native fullscreen-view helpers: indentation constants,
- * terminal-height viewport math, width fitting, hint-row formatting, and
- * step-navigation key matching used by the Usage and Injections views. Pure
- * string/number logic — no pi access.
+ * Shared modal text/layout helpers: indentation constants, terminal-height
+ * viewport math, width fitting, and hint-row formatting. Pure string/number
+ * logic — no pi access.
  */
 import type { Theme, ThemeColor } from '@earendil-works/pi-coding-agent';
-import { Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 
-/** Hint-row key label for the single-step navigation keys both views accept. */
+/** Hint-row key label for the single-step navigation keys modals accept. */
 export const STEP_KEY_HINT = '↑↓/jk';
 
 /** Two-space indent for descriptions, counters, hints, and body content. */
@@ -43,19 +42,20 @@ export function normalizeTerminalRows(rows: number): number {
   return Number.isFinite(rows) ? Math.max(1, Math.floor(rows)) : DEFAULT_TERMINAL_ROWS;
 }
 
-/** Whether input requests one step backwards: Up or vim-style `k`. */
-export function isStepBackKey(data: string): boolean {
-  return matchesKey(data, Key.up) || data === 'k';
-}
-
-/** Whether input requests one step forwards: Down or vim-style `j`. */
-export function isStepForwardKey(data: string): boolean {
-  return matchesKey(data, Key.down) || data === 'j';
-}
-
 /** Truncate one rendered line to the supplied width. */
 export function fitLine(line: string, width: number): string {
   return truncateToWidth(line, width, '…');
+}
+
+/** Collapse embedded newlines and truncate to one fitted single line. */
+export function singleLine(text: string, width: number): string {
+  return truncateToWidth(text.replace(/[\r\n]+/g, ' '), Math.max(1, width), '');
+}
+
+/** Fit one line to the exact width, padding with trailing spaces. */
+export function padLine(text: string, width: number): string {
+  const truncated = singleLine(text, width);
+  return truncated + ' '.repeat(Math.max(0, width - visibleWidth(truncated)));
 }
 
 /** Wrap plain dialog-description text with semantic color and an indented continuation column. */

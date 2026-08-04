@@ -11,7 +11,7 @@ It coordinates four feature modules:
 - **custom_footer**: Replaces the default footer with a richer status bar showing cwd/branch/session, token/cost/cache stats, context-window usage, subscription-rate usage, and the current model/thinking level.
 - **context_view**: Lazily captures and inspects the initial provider context, then opens a bounded half-height inline Usage/Injections interface through `/context-view` or `pi.vimKeys.event:pi-qol.context_view`.
 
-Shared concerns live here too: extension configuration loading, path resolution, model/auth resolution, and Zod schemas for every feature.
+Shared concerns live here too: extension configuration loading, path resolution, model/auth resolution, Zod schemas for every feature, and shared libraries under `libs/` — `libs/subscription-usage/` (provider usage facade) and `libs/modal/` (the self-contained modal dialog library used by `model_select` and `context_view`).
 
 ## Design Patterns
 
@@ -19,7 +19,7 @@ Shared concerns live here too: extension configuration loading, path resolution,
 - **Event-driven lifecycle**: Features hook into `session_start`, `session_shutdown`, `before_agent_start`, `input`, `turn_start`, `message_start`, `message_end`, `context`, `agent_settled`, and cross-extension events. They gate behaviour behind config flags and store transient state in closure variables (`lastSessionStartReason`, `titleController`, `installed`, `latestCtx`, `registered`, probe state, capture state).
 - **Configuration layering**: `ConfigLoader` merges a built-in default with a global JSON config and an optional project-level config, validated and typed with Zod. Only trusted projects load project-level overrides.
 - **Strategy pattern for subscription usage**: `SubscriptionUsageManager` dispatches to provider-specific `SubscriptionUsageStrategy` implementations (`AnthropicOauthUsageStrategy`, `OpenAiCodexUsageStrategy`) behind a common `SubscriptionUsageApi` interface.
-- **Component-based TUI**: `CustomFooterComponent`, `ModelSelectDialog`, and `ContextViewDialog` implement the host TUI's `Component`/`Focusable` interfaces, render to string arrays, and rely on the host for input routing and re-rendering.
+- **Component-based TUI**: `CustomFooterComponent`, `ModelSelectDialog`, and `ContextViewDialog` implement the host TUI's `Component`/`Focusable` interfaces, render to string arrays, and rely on the host for input routing and re-rendering. Both dialogs are thin configurations of the shared `libs/modal/` `ModalDialog` shell (tab strategies, pluggable navigation schemes, per-tab preview layers).
 - **Abortable async work**: `auto_session_name` tracks an `AbortController` across `before_agent_start` invocations so stale title requests are cancelled before a new one starts.
 - **Synthetic-probe capture**: `context_view` uses `InitialCaptureState` to freeze the first eligible provider context and `SilentProbeState` to emit a single empty probe when the user opens the view before any real turn has occurred.
 - **Utility classes as pure helpers**: `PathUtil`, `ModelResolver`, `ModelFormatter`, `AutoSessionNameGuard`, `AutoSessionNameTitleGenerator` are stateless or request-scoped helpers.
@@ -45,7 +45,7 @@ Shared concerns live here too: extension configuration loading, path resolution,
 4. **model_select** (`extensions/model-select/`)
    - Lazy-activates once on `session_start` when enabled.
    - `/select-model [args]` handler waits for the session to be idle, refreshes the registry, attempts an exact provider/model match, otherwise opens a custom TUI dialog with Favourites, group, and Search tabs.
-   - `ModelSelectDialog` filters search items with fuzzy matching, navigates favourites/search sections, and returns the chosen model to `pi.setModel` (optionally setting the configured default reasoning level).
+   - `ModelSelectDialog` configures a shared `ModalDialog` with one `ListTab` per section (fuzzy filtering via the shell's shared filter input, wrap-around selection) and returns the chosen model to `pi.setModel` (optionally setting the configured default reasoning level).
    - `PI_VIM_KEY_EVENT_ID` allows other extensions to trigger the same picker.
 
 5. **context_view** (`extensions/context-view/`)

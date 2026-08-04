@@ -23,7 +23,7 @@ function createDialog(rows = 24): ContextViewDialog {
   return new ContextViewDialog(
     tui as never,
     theme,
-    {} as KeybindingsManager,
+    { matches: () => false } as unknown as KeybindingsManager,
     { usage, initial: buildSnapshot([], 'real-turn', new Date()) },
     () => undefined,
   );
@@ -33,7 +33,7 @@ describe('ContextViewDialog', () => {
   test('opens on Usage, renders tabs, wraps both directions, and fits half the terminal', () => {
     const dialog = createDialog();
     expect(dialog.activeTab).toBe('usage');
-    expect(dialog.render(80)[1]).toContain('[Usage] [Injections]');
+    expect(dialog.render(80)[1]).toContain('[Usage]  [Injections]');
     expect(dialog.render(80).length).toBeLessThanOrEqual(12);
 
     dialog.handleInput('\t');

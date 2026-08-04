@@ -97,27 +97,27 @@ Wires the extension into `ExtensionAPI`.
 
 Bounded half-height inline shell.
 
-- `ContextViewDialog`: implements `Component` and `Focusable`; renders the active tab line and delegates to `UsageView`/`InjectionsView`.
-- `Tab`/`Shift+Tab` switches between `usage` and `injections`; both child view instances are retained so each preserves its scroll/selection state.
-- `VimNavigation` handles `j/k`, arrows, `Ctrl+u/d`, `gg/G` before passing unhandled input to the active child.
-- Height is bounded to `floor(terminal.rows / 2) - 1`.
+- `ContextViewDialog`: implements `Component` and `Focusable` by wrapping a `ModalDialog` from the shared modal library (`src/libs/modal/`), configured with the Vim navigation scheme, half-height bound, and the degraded reason as a shell notice.
+- `Tab`/`Shift+Tab` switches between `usage` and `injections`; both tab instances are retained so each preserves its scroll/selection/preview-layer state.
+- Vim keys (`j/k`, arrows, `Ctrl+u/d`, `gg/G`, Enter, Esc/`q`) are parsed by the library's `VimNavigationScheme`; unhandled input goes to the active tab.
+- Height is bounded to half the terminal by the shell.
 
 ### `ui/usage-view.ts`
 
-Stateful Usage tab.
+Stateful Usage tab (`ModalTab`).
 
-- Renders a proportional 14×14 context-window map (`UsageMap`), category legend, reported/estimated summary, and optional preview.
+- Renders a proportional 14×14 context-window map (`UsageMap`), category legend, and reported/estimated summary within the shell-provided content height.
 - Map scale toggles between `window` (reported context window) and `fit` (115% headroom, rounded to 2 significant digits) with `z` when applicable.
-- Preview mode (Enter) shows chronological content entries for the selected category; supports scrolling, paging, and bounds.
+- Preview (Enter) pushes a `PreviewLayer` showing chronological content entries for the selected category; scrolling/paging/bounds are handled by the layer via shell navigation actions.
 - Handles invisible-reasoning metadata display in Agent Thinking Messages.
-- Caches rendered output per (width, terminal rows) and invalidates on theme/selection/scroll changes.
+- Caches rendered output via the library's `RenderCache` and invalidates on theme/selection/scroll changes.
 
 ### `ui/injections-view.ts`
 
-Stateful Injections tab.
+Stateful Injections tab (`ModalTab`).
 
 - Renders the hierarchical Initial snapshot: groups (source), items, sub-items (children), and a non-selectable TOTAL row.
-- Preview mode (Enter) shows the raw text of the selected injection item.
+- Preview (Enter) pushes a `PreviewLayer` showing the raw text of the selected injection item.
 - Tree rendering uses `├─`/`└─`/`│` prefixes and a stable shared value column.
 - Currently only the `[INITIAL]` tab is rendered; `[Runtime]` is intentionally hidden until implemented.
 
@@ -129,8 +129,7 @@ Pure presentation model for Injections.
 - `buildInjectionRows()`: flattens `InitialSnapshot` into rows.
 - `collectItemsById()`: indexes items (including children) for preview lookup.
 - `normalizePreviewText()` / `normalizeInlineText()`: sanitize terminal escape sequences and collapse whitespace.
-- `ListNavigator`: selection/scroll-window state with selectable vs non-selectable rows.
-- `PreviewScroller`: scroll-only window over wrapped preview lines.
+- `ListNavigator`/`PreviewScroller` moved to the shared modal library (`src/libs/modal/list-navigator.ts`).
 
 ### `ui/usage-map.ts`
 
@@ -139,21 +138,12 @@ Pure 14×14 proportional map model.
 - `buildUsageMap()`: assigns cells to categories by largest overlap; fills `full`, `partial`, `buffer`, or `free`.
 - `calculateFitMapScale()`: computes a Fit denominator with 115% headroom, capped at the reported context window and floored at 10,000 tokens.
 
-### `ui/navigation.ts`
+### Shared modal library
 
-Shared Vim navigation parser.
+`ui/navigation.ts` and `ui/layout.ts` were absorbed into `src/libs/modal/`:
 
-- `VimNavigation.consume()` maps `j/k`, arrows, `Ctrl+u/d`, `gg`, `G` into `NavigationAction`.
-- `PageUp`/`PageDown`/`Home`/`End` are intentionally ignored (handled as consumed but no action).
-- Keeps a `pendingG` flag for the `gg` chord.
-
-### `ui/layout.ts`
-
-Shared layout utilities.
-
-- `calculateViewport()`, `fitToTerminalHeight()`, `fitLine()`, `spreadLine()`, `hintRow()`, `wrapDescriptionLines()`.
-- `STEP_KEY_HINT = '↑↓/jk'`.
-- `BODY_INDENT = '  '`.
+- `VimNavigationScheme` (`navigation/vim-scheme.ts`): maps `j/k`, arrows, `Ctrl+u/d`, `gg`, `G`, Enter, Esc/`q` into `NavigationAction`s; `PageUp`/`PageDown`/`Home`/`End` are intentionally swallowed.
+- `text.ts`: `calculateViewport()`, `fitToTerminalHeight()`, `fitLine()`, `spreadLine()`, `hintRow()`, `wrapDescriptionLines()`, `STEP_KEY_HINT`, `BODY_INDENT`.
 
 ### `ui/skill-preview.ts`
 
@@ -195,16 +185,17 @@ Preview-only recognition of pi `<skill name="...">` wrappers.
 
 ### ContextViewDialog
 
-- `usage ↔ injections` via `Tab`/`Shift+Tab`.
-- Active child handles selection, preview open/close, and scroll.
-- Preview closes with `Esc`/`q`; dialog closes with `Esc`/`q` at the list level.
+- `usage ↔ injections` via `Tab`/`Shift+Tab`, including while a preview layer is open.
+- The active tab handles selection and scroll via navigation actions; Enter pushes a preview layer.
+- `Esc`/`q` pops the active tab's preview layer first, then closes the dialog.
 
 ## Integration Points
 
 - **Config**: `config-loader.isEnabled('context_view')` gates activation and command use.
 - **ExtensionAPI**: `pi.on(...)`, `pi.registerCommand(...)`, `pi.events.on(...)`, `pi.appendEntry(...)`, `pi.getAllTools()`, `pi.getActiveTools()`, `pi.sendUserMessage('')`.
 - **ExtensionContext**: `ctx.ui.custom<void>()`, `ctx.ui.notify()`, `ctx.abort()`, `ctx.getSystemPrompt()`, `ctx.getSystemPromptOptions()`, `ctx.getContextUsage()`, `ctx.waitForIdle()`, `ctx.mode`, `ctx.model`, `ctx.modelRegistry.hasConfiguredAuth()`, `ctx.sessionManager.getEntries()`, `ctx.sessionManager.getLeafId()`.
-- **TUI**: `TUI`, `Theme`, `KeybindingsManager`, `Component`, `Focusable`, `Key`, `matchesKey`, `truncateToWidth`, `visibleWidth`, `wrapTextWithAnsi`.
+- **TUI**: `TUI`, `Theme`, `KeybindingsManager`, `Component`, `Focusable`, `Key`, `matchesKey`, `visibleWidth`, `wrapTextWithAnsi`.
+- **Modal library**: `src/libs/modal/` (`ModalDialog`, `VimNavigationScheme`, `ModalTab`, `PreviewLayer`, `ListNavigator`, `RenderCache`, text/layout helpers).
 - **Pi constants**: `piVimKeyEventId()` from `src/constants.ts`.
 - **Custom session entry**: `pi-context-view:probe-identities` for cross-runtime identity persistence.
 
