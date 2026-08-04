@@ -91,7 +91,7 @@ describe('model-select dialog', () => {
 
     expect(tabLine(dialog).trim()).toBe('[Favourites 0]');
     expect(rendered).toContain('No configured favourites are available.');
-    expect(rendered).not.toContain('tab/shift+tab switch sections');
+    expect(rendered).not.toContain('Tab Switch');
   });
 
   test('uses Search for an initial query when visible and Favourites when Search is hidden', () => {
@@ -126,7 +126,7 @@ describe('model-select dialog', () => {
     dialog.handleInput('enter');
 
     expect(selected.map(result => result?.id)).toEqual(['alpha', 'beta', 'alpha']);
-    expect(dialog.render(100).join('\n')).toContain('tab/shift+tab switch sections');
+    expect(dialog.render(100).join('\n')).toContain('Tab Switch');
   });
 
   test('applies one input query across favourites, groups, and Search', () => {

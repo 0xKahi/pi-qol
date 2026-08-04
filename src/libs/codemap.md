@@ -4,7 +4,14 @@
 
 `src/libs/` hosts shared, domain-specific library modules that are consumed by extensions and features across the project. It is not a generic utilities folder; modules here encapsulate cohesive business capabilities with stable public APIs.
 
-Currently, the folder contains the `subscription-usage` module, whose job is to fetch and normalize subscription/rate-limit usage data from upstream OAuth providers (Anthropic, OpenAI Codex) so that UI code can display a consistent usage indicator without needing to know provider-specific API details.
+Currently, the folder contains two modules: the `subscription-usage` module, which fetches and normalizes subscription/rate-limit usage data from upstream OAuth providers (Anthropic, OpenAI Codex) so UI code can display a consistent usage indicator without knowing provider-specific API details; and the `modal` module, a self-contained modal dialog library (shell, navigation schemes, tab strategies, preview layers, list navigation, text helpers) consumed by the `model-select` and `context-view` extensions and copy-portable to other Pi plugins.
+
+## Directory Map
+
+| Directory | Responsibility Summary | Detailed Map |
+| --- | --- | --- |
+| `subscription-usage/` | Provider-agnostic subscription/rate-limit usage access behind strategies and a facade. | [View Map](subscription-usage/codemap.md) |
+| `modal/` | Shared modal dialog shell, navigation schemes, tab strategies, layers, and layout helpers. | [View Map](modal/codemap.md) |
 
 ## Design Patterns
 

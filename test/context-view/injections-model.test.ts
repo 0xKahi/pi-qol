@@ -5,11 +5,10 @@ import type { InitialSnapshot, InjectionItem } from '../../src/extensions/contex
 import {
   buildInjectionRows,
   collectItemsById,
-  ListNavigator,
   normalizeInlineText,
   normalizePreviewText,
-  PreviewScroller,
 } from '../../src/extensions/context-view/ui/injections-model.ts';
+import { ListNavigator, PreviewScroller } from '../../src/libs/modal/index.ts';
 
 function item(id: string, sourceId: string, native: boolean, tokens: number): InjectionItem {
   return {
