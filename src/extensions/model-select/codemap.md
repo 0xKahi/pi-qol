@@ -13,11 +13,11 @@ This extension implements the `/select-model` command and its interactive picker
   - `index.ts`: orchestrates activation, command handling, applying the selected model, setting default reasoning, and bridging registry errors into the dialog.
   - `model-lists.ts`: queries the registry and prepares favourite, grouped favourite, and searchable model lists; validates favourite entries against the registry and configured auth.
   - `model-formatter.ts`: pure static utilities for labels, descriptions, sorting, token formatting, capability detection, and search-text generation.
-  - `model-select-dialog.ts`: thin `ModalDialog` (shared modal library) configuration: one `ListTab` per section (permanent Favourites, groups, Search), a shared filter input, notices for config warnings, and per-section row/empty-state/footer hooks.
+  - `model-select-dialog.ts`: thin `ModalDialog` (shared modal library) configuration: one `ListTab` per section (permanent Favourites, groups, Search), a shared filter input, notices for config warnings, and per-section row/empty-state/footer hooks. The shared presenter supplies its resolved inline or bordered frame.
   - `constants.ts`: command name, cross-extension event ID, and dialog rendering limits.
   - `types.ts`: shared item, list, tab, and dialog option types.
 - **Modal library delegation**: `ModelSelectDialog` implements `Component` and `Focusable` by delegating to a `ModalDialog` from `src/libs/modal/`; the shell owns the tab strip, tab cycling, keybinding-driven navigation (wrap-around selection via `ListTab`), the shared filter `Input`, and the help footer.
-- **Layout-aware rendering**: the dialog uses the shell's `inline` frame or `bordered` frame (centered by host overlay options) depending on the `model_select.layout` config value.
+- **Layout-aware presentation**: `showModelSelector` passes `model_select.layout` to the shared modal presenter, which coordinates the dialog's inline/bordered frame with normal or centered overlay mounting.
 - **Defensive guards**: checks feature enablement, UI availability, idle state (`waitForIdle`), exact-match short-circuit, and auth availability before applying a model.
 
 ## Data & Control Flow
@@ -42,7 +42,7 @@ This extension implements the `/select-model` command and its interactive picker
    - Favourites must exist in the registry and have configured auth; missing or unauthenticated entries are collected as warnings and omitted from the list.
    - Accepted favourites retain exact group memberships; the ordered `groups` config defines the visible group tabs. Duplicate favourite models are deduplicated by provider/id, and duplicate group names are collapsed while preserving configured order.
    - Any model-registry error is added to the dialog's `configWarnings` so it appears inside the picker.
-   - `ctx.ui.custom` creates a `ModelSelectDialog` with favourite/group/search lists, tab visibility controls, the current model, warnings, `initialSearch`, `layout`, `defaultReasoning`, and an `onDone` callback. The overlay layout is centered at 85% width with a one-cell margin.
+   - The shared `presentModal` helper creates a `ModelSelectDialog` with favourite/group/search lists, tab visibility controls, the current model, warnings, `initialSearch`, resolved frame, `defaultReasoning`, and an `onDone` callback. The overlay layout remains centered at 85% width with a one-cell margin.
    - The dialog always creates a Favourites tab, adds visible group tabs and optional Search, and renders a width-aware tab strip, shared filter input, warnings, and help footer. If `initialSearch` is non-empty and Search is visible, the dialog starts on the Search tab and seeds the input.
 
 5. **User interaction**

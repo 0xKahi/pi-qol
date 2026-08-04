@@ -8,7 +8,7 @@ Current features:
 
 - `auto-session-name` – automatically generates and applies a concise session title from the user’s first message.
 - `model-select` – provides an interactive `/select-model` command (and cross-extension activation hook) for choosing models from the registry with permanent Favourites, ordered custom groups, fuzzy search, provider filtering, and inline or overlay layout.
-- `context-view` – captures model context contributions and displays Usage/Injections in a bounded half-height inline tabbed interface opened by command or Vim event.
+- `context-view` – captures model context contributions and displays Usage/Injections in a bounded half-height tabbed interface with configurable inline or overlay presentation, opened by command or Vim event.
 - `custom-footer` – replaces the TUI footer with a richer status bar showing cwd, git branch, session name, model, token/cost usage, context-window usage, and subscription usage.
 
 ---
@@ -72,7 +72,7 @@ The registration function wires three `ExtensionAPI` events:
 2. `showModelSelector` waits for idle when available, refreshes `ctx.modelRegistry`, and attempts an exact provider/model match through `findExactModel`.
 3. If an exact match succeeds, the model is applied immediately via `applySelectedModel` and the dialog is skipped.
 4. Otherwise, `buildModelLists` prepares Favourites, ordered group subsets, and Search items. Provider filtering is applied only to Search, and favourite auth/registry warnings are collected.
-5. `ctx.ui.custom` creates a `ModelSelectDialog` configured with the current model, lists, tab visibility, warnings, initial search, and layout.
+5. The shared `presentModal` helper creates a `ModelSelectDialog` configured with the current model, lists, tab visibility, warnings, initial search, and the resolved frame for the configured layout.
 6. The dialog shares a single query across visible tabs, preserves per-tab selection, cycles tabs, and renders either inline or as a centered overlay at 85% width.
 7. On selection, `applySelectedModel` calls `pi.setModel` and, if supported, sets the configured default reasoning level via `pi.setThinkingLevel`; missing auth is reported as an error.
 
@@ -114,7 +114,7 @@ The registration function wires three `ExtensionAPI` events:
 2. `before_agent_start` prepares the initial capture; the `context` event freezes the first eligible provider snapshot.
 3. If the view is opened before capture completes, a silent probe runs; synthetic messages are filtered, sanitized, and persisted by identity only.
 4. `prepareContextViewData` combines the snapshot, current native prompt/tool data, filtered session messages, and reported usage.
-5. `ContextViewDialog` opens as a Usage-first inline component bounded to 50% of the terminal height, retaining state for both the Usage and Injections tabs.
+5. `ContextViewDialog` opens as a Usage-first component bounded to 50% of the terminal height; the shared presenter selects inline or centered overlay mounting while retaining state for both tabs.
 6. Shared navigation (`j`/`k`, arrows, `Ctrl+u`/`d`, `gg`/`G`) is routed through `ui/navigation.ts`.
 
 #### Integration points
@@ -197,7 +197,7 @@ The registration function wires three `ExtensionAPI` events:
 4. **context-view flow**
    - Lazily activates only when `context_view.enabled` is true at session start.
    - Captures owned prompt/tool/message inputs, freezes the first provider-context snapshot, and filters exact synthetic-probe identities.
-   - `/context-view` and `pi.vimKeys.event:pi-qol.context_view` share data preparation and open a bounded half-height Usage-first inline interface.
+   - `/context-view` and `pi.vimKeys.event:pi-qol.context_view` share data preparation and open a bounded half-height Usage-first interface through the shared presenter using the configured inline or overlay layout.
    - The dialog retains Usage/Injections child state and routes Tab plus Vim navigation (`j/k`, `Ctrl+u/d`, `gg/G`).
 
 5. **custom-footer flow**

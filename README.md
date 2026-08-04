@@ -110,7 +110,8 @@ them (project overrides global):
     "hide_tabs": { "groups": false, "search": false }
   },
   "context_view": {
-    "enabled": true
+    "enabled": true,
+    "layout": "inline"
   },
   "custom_footer": {
     "enabled": true,
@@ -174,10 +175,11 @@ Duplicate favourite declarations remain first-entry-wins.
 | Key       | Type      | Default | Description |
 | --------- | --------- | ------- | ----------- |
 | `enabled` | `boolean` | `false` | Enable the Context View capture and interface. |
+| `layout`  | `enum`    | `inline` | Context View presentation: `inline` or centered `overlay`. |
 
 ### Context View
 
-Context View is a fork of Dmitry Makarov's [pi-context-view](https://github.com/dimk90/pi-context-view), adapted into one unified tabbed interface with Vim-friendly keybindings. Enable it, then run `/context-view` with no arguments. The Usage tab opens first; Tab and Shift+Tab switch between Usage and Injections. Use `j`/`k` or arrows to move, `Ctrl+u`/`Ctrl+d` to move by a page, `gg`/`G` to jump to the beginning/end, Enter to preview, and Esc or `q` to return or close. Other extensions can open the same view by emitting `pi.vimKeys.event:pi-qol.context_view`.
+Context View is a fork of Dmitry Makarov's [pi-context-view](https://github.com/dimk90/pi-context-view), adapted into one unified tabbed interface with Vim-friendly keybindings. Enable it, then run `/context-view` with no arguments. The Usage tab opens first; Tab and Shift+Tab switch between Usage and Injections. Use `j`/`k` or arrows to move, `Ctrl+u`/`Ctrl+d` to move by a page, `gg`/`G` to jump to the beginning/end, Enter to preview, and Esc or `q` to return or close. By default it opens inline; set `context_view.layout` to `overlay` for a centered overlay. Other extensions can open the same view by emitting `pi.vimKeys.event:pi-qol.context_view`.
 
 #### `custom_footer`
 

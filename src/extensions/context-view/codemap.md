@@ -2,7 +2,7 @@
 
 ## Responsibility
 
-Provides optional, TUI-only inspection of model-context occupancy and Initial-phase context injections. Disabled by default; lazily registered only after a session starts with `context_view` enabled. Two inspection surfaces are exposed:
+Provides optional, TUI-only inspection of model-context occupancy and Initial-phase context injections. Disabled by default; lazily registered only after a session starts with `context_view` enabled. The interface defaults to inline presentation and can be configured as a centered overlay. Two inspection surfaces are exposed:
 
 - `/context-view` command (registered as `context-view`).
 - `pi.vimKeys.event:pi-qol.context_view` Vim event (defined in `constants.ts` and `src/constants.ts`).
@@ -14,7 +14,7 @@ All captured prompt, tool, skill, context-file, and message content remains proc
 - **Pure semantic model / pure functions**: `model.ts`, `measure.ts`, `usage.ts`, `ui/injections-model.ts`, `ui/usage-map.ts`, `ui/layout.ts`, `ui/skill-preview.ts` contain no pi or TUI API access and are independently unit-testable.
 - **State machines**: `InitialCaptureState` (capture-once) and `SilentProbeState` (single probe lifecycle) in `capture.ts` own explicit phases and transitions.
 - **Controller / data preparation**: `context-view-controller.ts` isolates the command/UI data path from the event-driven capture path.
-- **Stateful UI shell with stateful child tabs**: `ContextViewDialog` (shell) retains `UsageView` and `InjectionsView` instances; navigation is shared via `VimNavigation`.
+- **Stateful UI shell with stateful child tabs**: `ContextViewDialog` (shell) retains `UsageView` and `InjectionsView` instances; navigation is shared via `VimNavigation`. The shared modal presenter coordinates its semantic layout with the shell frame and host mounting.
 - **Event-driven registration**: `index.ts` hooks into `ExtensionAPI` events and only performs work when `config.isEnabled('context_view')` returns true.
 - **Sanitize-before-persist**: `SilentProbeState` records only `role` and `timestamp` for synthetic messages; raw content is discarded.
 
@@ -95,12 +95,12 @@ Wires the extension into `ExtensionAPI`.
 
 ### `ui/context-view-dialog.ts`
 
-Bounded half-height inline shell.
+Bounded half-height shell with configurable inline or overlay presentation.
 
-- `ContextViewDialog`: implements `Component` and `Focusable` by wrapping a `ModalDialog` from the shared modal library (`src/libs/modal/`), configured with the Vim navigation scheme, half-height bound, and the degraded reason as a shell notice.
+- `ContextViewDialog`: implements `Component` and `Focusable` by wrapping a `ModalDialog` from the shared modal library (`src/libs/modal/`), configured with the presenter-resolved inline/bordered frame, Vim navigation scheme, half-height bound, and the degraded reason as a shell notice.
 - `Tab`/`Shift+Tab` switches between `usage` and `injections`; both tab instances are retained so each preserves its scroll/selection/preview-layer state.
 - Vim keys (`j/k`, arrows, `Ctrl+u/d`, `gg/G`, Enter, Esc/`q`) are parsed by the library's `VimNavigationScheme`; unhandled input goes to the active tab.
-- Height is bounded to half the terminal by the shell.
+- Height is bounded to half the terminal by the shell in both layouts.
 
 ### `ui/usage-view.ts`
 
@@ -164,7 +164,7 @@ Preview-only recognition of pi `<skill name="...">` wrappers.
    - builds a current native snapshot from live prompt/tool data;
    - merges context-only messages from the fallback snapshot;
    - computes the usage snapshot and opens `ContextViewDialog`.
-7. `ContextViewDialog` opens on the Usage tab, bounded to half terminal height, and routes input to the active tab while retaining both tab states.
+7. The shared modal presenter opens `ContextViewDialog` using `context_view.layout`; the dialog starts on Usage, remains bounded to half terminal height, and routes input to the active tab while retaining both tab states.
 
 ## State Transitions
 
@@ -191,7 +191,7 @@ Preview-only recognition of pi `<skill name="...">` wrappers.
 
 ## Integration Points
 
-- **Config**: `config-loader.isEnabled('context_view')` gates activation and command use.
+- **Config**: `config-loader.isEnabled('context_view')` gates activation and command use; `config-loader.getContextView().layout` selects inline or overlay presentation (default `inline`).
 - **ExtensionAPI**: `pi.on(...)`, `pi.registerCommand(...)`, `pi.events.on(...)`, `pi.appendEntry(...)`, `pi.getAllTools()`, `pi.getActiveTools()`, `pi.sendUserMessage('')`.
 - **ExtensionContext**: `ctx.ui.custom<void>()`, `ctx.ui.notify()`, `ctx.abort()`, `ctx.getSystemPrompt()`, `ctx.getSystemPromptOptions()`, `ctx.getContextUsage()`, `ctx.waitForIdle()`, `ctx.mode`, `ctx.model`, `ctx.modelRegistry.hasConfiguredAuth()`, `ctx.sessionManager.getEntries()`, `ctx.sessionManager.getLeafId()`.
 - **TUI**: `TUI`, `Theme`, `KeybindingsManager`, `Component`, `Focusable`, `Key`, `matchesKey`, `visibleWidth`, `wrapTextWithAnsi`.

@@ -9,9 +9,9 @@ It coordinates four feature modules:
 - **auto_session_name**: Generates and applies a concise session title from the user's first message before the agent runs.
 - **model_select**: Registers a `/select-model` command (plus a cross-extension event) for picking or searching available models with favourites, ordered custom groups, provider filtering, and an inline or overlay layout.
 - **custom_footer**: Replaces the default footer with a richer status bar showing cwd/branch/session, token/cost/cache stats, context-window usage, subscription-rate usage, and the current model/thinking level.
-- **context_view**: Lazily captures and inspects the initial provider context, then opens a bounded half-height inline Usage/Injections interface through `/context-view` or `pi.vimKeys.event:pi-qol.context_view`.
+- **context_view**: Lazily captures and inspects the initial provider context, then opens a bounded half-height Usage/Injections interface through `/context-view` or `pi.vimKeys.event:pi-qol.context_view`, with configurable inline or centered overlay presentation.
 
-Shared concerns live here too: extension configuration loading, path resolution, model/auth resolution, Zod schemas for every feature, and shared libraries under `libs/` — `libs/subscription-usage/` (provider usage facade) and `libs/modal/` (the self-contained modal dialog library used by `model_select` and `context_view`).
+Shared concerns live here too: extension configuration loading, path resolution, model/auth resolution, Zod schemas for every feature, and shared libraries under `libs/` — `libs/subscription-usage/` (provider usage facade) and `libs/modal/` (the self-contained modal dialog shell and presenter used by `model_select` and `context_view`).
 
 ## Design Patterns
 
@@ -52,7 +52,7 @@ Shared concerns live here too: extension configuration loading, path resolution,
    - Lazy-activates once on `session_start` when enabled; restores previously persisted probe message identities from the session manager.
    - Owns `before_agent_start` prompt options; freezes the first eligible provider context snapshot on the `context` event.
    - `input` observes extension empty inputs, `message_start`/`message_end` records probe identities, `turn_start` aborts the current probe, and `agent_settled`/`session_shutdown` settle the probe attempt.
-   - `/context-view` and the Vim event handler both call `prepareContextViewData`, which triggers a silent authenticated probe when no snapshot exists yet, then opens the `ContextViewDialog`.
+   - `/context-view` and the Vim event handler both call `prepareContextViewData`, which triggers a silent authenticated probe when no snapshot exists yet, then opens the `ContextViewDialog` through the shared modal presenter using the configured inline or overlay layout.
 
 6. **custom_footer** (`extensions/custom-footer/`)
    - On first enabled `session_start`, installs a footer component via `ctx.ui.setFooter`.

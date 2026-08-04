@@ -33,7 +33,7 @@ The package is distributed as `@0xkahi/pi-qol`; its published payload is the sou
 | `src/extensions/` | Feature-level registration layer for auto session naming, model selection, context inspection, and custom footer integration with Pi lifecycle events and UI hooks. | [View Map](src/extensions/codemap.md) |
 | `src/extensions/auto-session-name/` | Generates and applies concise session titles from the first user message using guarded, abortable model calls. | [View Map](src/extensions/auto-session-name/codemap.md) |
 | `src/extensions/model-select/` | Provides `/select-model` and event-driven interactive model picking with permanent Favourites, ordered group tabs, fuzzy search, and Search-only provider filtering. | [View Map](src/extensions/model-select/codemap.md) |
-| `src/extensions/context-view/` | Captures and classifies model context for a bounded half-height inline tabbed Usage/Injections interface opened by command or Vim event. | [View Map](src/extensions/context-view/codemap.md) |
+| `src/extensions/context-view/` | Captures and classifies model context for a bounded half-height Usage/Injections interface with configurable inline or overlay presentation, opened by command or Vim event. | [View Map](src/extensions/context-view/codemap.md) |
 | `src/extensions/context-view/ui/` | Implements the retained Usage/Injections TUI views, proportional usage map, previews, layout, and shared Vim-style navigation. | [View Map](src/extensions/context-view/ui/codemap.md) |
 | `src/extensions/custom-footer/` | Replaces the default TUI footer with a status component for cwd/branch/session/model, token/cost/context, and subscription usage. | [View Map](src/extensions/custom-footer/codemap.md) |
 | `src/libs/` | Shared domain libraries; currently provider-agnostic subscription usage access for UI consumers. | [View Map](src/libs/codemap.md) |
@@ -49,7 +49,7 @@ The package is distributed as `@0xkahi/pi-qol`; its published payload is the sou
 - **Pi plugin registration**: `src/index.ts` wires feature factories into the `ExtensionAPI`; features are activated by host lifecycle events rather than direct imports from the root.
 - **Configuration layering**: defaults, global config, and trusted project config are merged and validated through Zod schemas before feature code reads them.
 - **Feature isolation**: each extension owns its registration, state, helpers, and UI behaviour while sharing common config/model/path utilities.
-- **Event-driven UI integration**: features listen to Pi lifecycle events, slash commands, and cross-extension event ids for model picker and Context View activation.
+- **Event-driven UI integration**: features listen to Pi lifecycle events, slash commands, and cross-extension event ids for model picker and Context View activation; shared modal presentation coordinates normal and overlay mounting.
 - **Strategy and facade for provider APIs**: subscription usage uses provider-specific strategies behind a normalized `SubscriptionUsageApi` so the footer consumes one common rate-window model.
 
 ## Data & Control Flow

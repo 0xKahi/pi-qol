@@ -1,6 +1,7 @@
 import { type Api, getSupportedThinkingLevels, type Model } from '@earendil-works/pi-ai';
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { ConfigLoader } from '../../config-loader';
+import { presentModal } from '../../libs/modal';
 import type { ModelSelectConfig } from '../../schemas/model-select.config.schema';
 import { COMMAND_NAME, PI_VIM_KEY_EVENT_ID } from './constants';
 import { ModelFormatter } from './model-formatter';
@@ -44,8 +45,10 @@ export async function showModelSelector(pi: ExtensionAPI, args: string, ctx: Ext
   const modelLists = await buildModelLists(ctx, config);
   const registryError = ctx.modelRegistry.getError();
 
-  const selected = await ctx.ui.custom<DialogResult>(
-    (tui, theme, keybindings, done) =>
+  const selected = await presentModal<DialogResult>(
+    ctx.ui,
+    config.layout,
+    (tui, theme, keybindings, done, frame) =>
       new ModelSelectDialog(tui, theme, keybindings, {
         currentModel: ctx.model,
         favouriteItems: modelLists.favouriteItems,
@@ -59,19 +62,9 @@ export async function showModelSelector(pi: ExtensionAPI, args: string, ctx: Ext
         defaultReasoning: config.default_reasoning,
         configWarnings: registryError ? [`models.json: ${registryError}`] : [],
         initialSearch: args.trim(),
-        layout: config.layout,
+        frame,
         onDone: done,
       }),
-    config.layout === 'overlay'
-      ? {
-          overlay: true,
-          overlayOptions: {
-            anchor: 'center',
-            width: '85%',
-            margin: 1,
-          },
-        }
-      : undefined,
   );
 
   if (selected) {

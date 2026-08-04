@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Api, Model } from '@earendil-works/pi-ai';
 import type { KeybindingsManager, Theme } from '@earendil-works/pi-coding-agent';
+import type { ModalFrame } from '../../src/libs/modal';
 import { visibleWidth } from '@earendil-works/pi-tui';
 import { ModelFormatter } from '../../src/extensions/model-select/model-formatter';
 import { ModelSelectDialog } from '../../src/extensions/model-select/model-select-dialog';
@@ -48,7 +49,7 @@ function createDialog(overrides: Partial<DialogOptions> = {}, onDone: (result: M
     providerFilter: [],
     configWarnings: [],
     initialSearch: '',
-    layout: 'inline',
+    frame: 'inline' as ModalFrame,
     onDone,
     ...overrides,
   });
@@ -63,6 +64,12 @@ function groups(...entries: Array<[string, ModelItem[]]>): ModelGroupList[] {
 }
 
 describe('model-select dialog', () => {
+  test('uses the presenter-resolved frame for overlay presentation', () => {
+    const dialog = createDialog({ frame: 'bordered' });
+    expect(dialog.render(40)[0]).toMatch(/^╭─+╮$/);
+    expect(dialog.render(40).at(-1)).toMatch(/^╰─+╯$/);
+  });
+
   test('renders configured default reasoning in the title and omits it when unset', () => {
     expect(createDialog({ defaultReasoning: 'high' }).render(100)[1]).toContain('reasoning: high');
     expect(createDialog().render(100)[1]).not.toContain('reasoning:');
