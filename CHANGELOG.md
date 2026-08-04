@@ -1,5 +1,11 @@
 # @0xkahi/pi-qol
 
+## 1.0.1
+
+### Patch Changes
+
+- 5c0b97e: refactor: extract shared modal library (`src/libs/modal/`) powering the model-select and context-view dialogs — standardized tab strip, navigation schemes, preview layers, and help footers; no behavior change intended
+
 ## 1.0.0
 
 ### Major Changes
