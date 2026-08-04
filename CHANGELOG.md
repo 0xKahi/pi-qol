@@ -1,5 +1,11 @@
 # @0xkahi/pi-qol
 
+## 1.0.2
+
+### Patch Changes
+
+- 3bc67d4: moved layout handling to its own component
+
 ## 1.0.1
 
 ### Patch Changes
