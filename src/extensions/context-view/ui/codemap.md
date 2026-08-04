@@ -2,13 +2,13 @@
 
 ## Responsibility
 
-This folder contains the TUI components for the Context View feature. It renders an inline, half-height modal dialog with two tabs: **Usage** and **Injections**. Usage visualizes the estimated context-window composition with a proportional map, a selectable category legend, and a chronological content preview per category. Injections lists the hierarchical Initial snapshot of prompt/tool/context-file/skills injections with a per-item text preview. The modules are pure UI helpers: they do not call the Pi API directly and only depend on the shared `model.ts` types and the `@earendil-works/pi-tui` / `@earendil-works/pi-coding-agent` theme interfaces.
+This folder contains the TUI components for the Context View feature. It renders a half-height modal dialog, mounted inline by default or as a centered overlay, with two tabs: **Usage** and **Injections**. Usage visualizes the estimated context-window composition with a proportional map, a selectable category legend, and a chronological content preview per category. Injections lists the hierarchical Initial snapshot of prompt/tool/context-file/skills injections with a per-item text preview. The modules are pure UI helpers: they do not call the Pi API directly and only depend on the shared `model.ts` types and the `@earendil-works/pi-tui` / `@earendil-works/pi-coding-agent` theme interfaces.
 
 All modal plumbing — frame borders, tab strip, tab cycling, Vim key parsing, preview layers, dismissal ordering, height bounding, and the help footer — is owned by the shared modal library (`src/libs/modal/`). This folder keeps only Context View content: the two tab strategies and their bespoke rendering.
 
 ## Component/Model Structure
 
-- `context-view-dialog.ts` — thin wrapper configuring a `ModalDialog` (Vim navigation scheme, half-height bound, degraded-reason notice) with the Usage and Injections tabs. Keeps the `Component`/`Focusable` surface and the `activeTab` accessor.
+- `context-view-dialog.ts` — thin wrapper configuring a `ModalDialog` (presenter-resolved frame, Vim navigation scheme, half-height bound, degraded-reason notice) with the Usage and Injections tabs. Keeps the `Component`/`Focusable` surface and the `activeTab` accessor.
 - `usage-view.ts` — the Usage tab (`ModalTab`). Stateful class that renders the context map, category legend, and zoom; category previews are pushed as `PreviewLayer`s. Uses `UsageMap`, `LegendRow`, `UsageMapScale`, `ListNavigator`, and `RenderCache` from the modal library.
 - `injections-view.ts` — the Injections tab (`ModalTab`). Stateful class that renders the hierarchical list of Initial snapshot rows; item previews are pushed as `PreviewLayer`s. Uses `InjectionRow` and the modal library's `ListNavigator`/`RenderCache`.
 - `injections-model.ts` — pure presentation model for injections: flattens `InitialSnapshot` into `InjectionRow[]`, maps items by id, and normalizes preview text. (`ListNavigator`/`PreviewScroller` moved to the modal library.)
@@ -26,8 +26,8 @@ All modal plumbing — frame borders, tab strip, tab cycling, Vim key parsing, p
 
 ## Rendering/Input/Data Flow
 
-1. Opening: `index.ts` calls `prepareContextViewData`, then `ctx.ui.custom(...)` to create a `ContextViewDialog` with `usage`, `initial`, and optional `degradedReason`.
-2. The dialog configures `ModalDialog` with `height: 'half'`, `VimNavigationScheme`, the degraded reason as a warning notice, and both tabs.
+1. Opening: `index.ts` calls `prepareContextViewData`, then `presentModal(...)` creates a `ContextViewDialog` with `usage`, `initial`, optional `degradedReason`, and the frame resolved from `context_view.layout`.
+2. The presenter configures mounting and frame from `context_view.layout`; the dialog configures `ModalDialog` with `height: 'half'`, `VimNavigationScheme`, the degraded reason as a warning notice, and both tabs.
 3. On each render cycle the shell renders the frame, tab strip, notices, the active tab's content region (exact bounded height), and the help footer composed of scheme hints, active tab/layer hints, and universal hints.
 4. Input: the shell handles `Tab`/`Shift+Tab` cycling first, then the Vim scheme. `dismiss` pops the active tab's top layer or closes the dialog; other actions go to the top layer, else the active tab; unmapped raw keys go to the layer or tab.
 5. Tabs handle list navigation, preview opening (confirm action), and view-local keys. After handling, `tui.requestRender()` is called by the shell.
@@ -64,7 +64,7 @@ All modal plumbing — frame borders, tab strip, tab cycling, Vim key parsing, p
 
 ## Integration Points
 
-- **Entry**: `index.ts` calls `openContextView`, which uses `ctx.ui.custom<void>` to instantiate `ContextViewDialog`. This attaches the dialog to the Pi TUI.
+- **Entry**: `index.ts` calls `openContextView`, which uses the shared `presentModal` helper to instantiate and mount `ContextViewDialog` in the configured layout.
 - **Modal library**: `src/libs/modal/` supplies `ModalDialog`, `VimNavigationScheme`, `ModalTab`/`ModalTabContext` contracts, `ListNavigator`, `PreviewLayer`, `RenderCache`, and layout/text helpers (`BODY_INDENT`, `calculateViewport`, `fitLine`, `spreadLine`, `wrapDescriptionLines`).
 - **Data contract**: `ContextViewData` from `context-view-controller.ts` supplies `{ initial, usage, degradedReason }`; the dialog maps `degradedReason` to the shell notices slot.
 - **Usage data source**: `usage.ts` produces `ContextUsageSnapshot` via `computeUsage`, which merges the frozen `InitialSnapshot` with live session messages and reported provider usage. `usage.ts` also provides `collectPreviewEntries`, which `UsageView` uses to flatten a category's chronological entries.

@@ -40,6 +40,7 @@ The schema defines four feature-flagged top-level sections, each wrapping relate
   - `display`: Object with `tokens` and `cache` booleans (default `true`).
 - `context_view`: Additional context viewer feature.
   - `enabled`: Boolean toggle (default `false`).
+  - `layout`: Enum `inline` or `overlay` (default `inline`), controlling normal versus centered bordered presentation.
 
 Shared constraints:
 - `reasoning` and `layout` are represented as JSON Schema `enum` values.

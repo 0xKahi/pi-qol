@@ -84,6 +84,27 @@ The library SHALL provide a preview layer that renders wrapped text with step, p
 - **WHEN** a preview layer is open and the user triggers step, page, or boundary navigation
 - **THEN** the preview scrolls accordingly without affecting the underlying tab's selection
 
+### Requirement: Coordinated modal presentation
+The library SHALL provide a shared presentation abstraction accepting an `inline` or `overlay` layout and SHALL coordinate the dialog frame with the host custom-UI mounting options. Inline layout SHALL use an inline frame without overlay mounting. Overlay layout SHALL use a bordered frame and centered overlay mounting with shared defaults. Consumers SHALL be able to retain independent dialog height policies in either layout.
+
+#### Scenario: Present inline modal
+- **WHEN** a consumer opens a modal with layout set to `inline`
+- **THEN** the modal uses the inline frame
+- **AND THEN** the host mounts it in the normal custom-UI flow without overlay options
+
+#### Scenario: Present overlay modal
+- **WHEN** a consumer opens a modal with layout set to `overlay`
+- **THEN** the modal uses the bordered frame
+- **AND THEN** the host mounts it as a centered overlay using the shared width and margin defaults
+
+#### Scenario: Preserve independent height policy
+- **WHEN** a height-bounded modal is opened using either supported layout
+- **THEN** its configured height bound remains in effect
+
+#### Scenario: Existing Model Select presentation is preserved
+- **WHEN** Model Select opens using either its inline or overlay layout
+- **THEN** its frame and host mounting behavior remain equivalent to the behavior before adoption of the shared presentation abstraction
+
 ### Requirement: Framing styles
 The dialog SHALL support an inline frame that draws horizontal rules above and below the content, a bordered frame that draws a rounded border around the content for use with host overlay centering, and an optional bounded-height policy that limits content height to a fraction of the terminal.
 

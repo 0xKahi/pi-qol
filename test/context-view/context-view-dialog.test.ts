@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { KeybindingsManager, Theme } from '@earendil-works/pi-coding-agent';
 import { buildSnapshot, type ContextUsageSnapshot } from '../../src/extensions/context-view/model';
 import { ContextViewDialog } from '../../src/extensions/context-view/ui/context-view-dialog';
+import type { ModalFrame } from '../../src/libs/modal';
 
 const theme = {
   fg: (_color: string, text: string) => text,
@@ -18,7 +19,7 @@ const usage: ContextUsageSnapshot = {
   estimatedTokens: 20,
 };
 
-function createDialog(rows = 24): ContextViewDialog {
+function createDialog(rows = 24, frame: ModalFrame = 'inline'): ContextViewDialog {
   const tui = { terminal: { rows }, requestRender: () => undefined };
   return new ContextViewDialog(
     tui as never,
@@ -26,10 +27,19 @@ function createDialog(rows = 24): ContextViewDialog {
     { matches: () => false } as unknown as KeybindingsManager,
     { usage, initial: buildSnapshot([], 'real-turn', new Date()) },
     () => undefined,
+    frame,
   );
 }
 
 describe('ContextViewDialog', () => {
+  test('renders an overlay frame without changing the half-height bound', () => {
+    const dialog = createDialog(24, 'bordered');
+    const rendered = dialog.render(80);
+    expect(rendered[0]).toMatch(/^╭─+╮$/);
+    expect(rendered.at(-1)).toMatch(/^╰─+╯$/);
+    expect(rendered.length).toBeLessThanOrEqual(12);
+  });
+
   test('opens on Usage, renders tabs, wraps both directions, and fits half the terminal', () => {
     const dialog = createDialog();
     expect(dialog.activeTab).toBe('usage');

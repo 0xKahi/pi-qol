@@ -42,7 +42,7 @@ export class ModelSelectDialog implements Component, Focusable {
       notices: options.configWarnings,
       maxNoticeLines: MAX_CONFIG_WARNING_LINES,
       filter: { initialQuery: options.initialSearch },
-      frame: options.layout === 'overlay' ? 'bordered' : 'inline',
+      frame: options.frame,
       cancelValue: null,
       onComplete: result => options.onDone(result),
     });

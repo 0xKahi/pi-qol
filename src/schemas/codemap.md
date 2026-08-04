@@ -12,7 +12,7 @@ This directory defines the Zod-based configuration schemas for the `pi-qol` plug
 | `auto-session-name.config.schema.ts` | `AutoSessionNameConfigSchema`, `AutoSessionNameConfig`; `PartialAutoSessionNameConfigSchema`, `PartialAutoSessionNameConfig` | Full and partial schemas for the session-naming feature. |
 | `model-select.config.schema.ts` | `FavouriteModelSchema` (private); `ModelSelectLayoutSchema`, `ModelSelectLayout`; `HideTabsSchema` (private); `ModelSelectConfigSchema`, `ModelSelectConfig`; `PartialModelSelectConfigSchema`, `PartialModelSelectConfig` | Full and partial schemas for the model picker, including favourites, groups, tab visibility, provider filtering, layout, and default reasoning. |
 | `custom-footer-config.schema.ts` | `CustomFooterConfigSchema`, `CustomFooterConfig`; `DEFAULT_CUSTOM_FOOTER_CONFIG`; `PartialCustomFooterConfigSchema`, `PartialCustomFooterConfig` | Full and partial schemas for the footer, including colors, icons, and display flags. |
-| `context-view.config.schema.ts` | `ContextViewConfigSchema`, `ContextViewConfig`; `DEFAULT_CONTEXT_VIEW_CONFIG`; `PartialContextViewConfigSchema`, `PartialContextViewConfig` | Full and partial schemas for the context-view feature (disabled by default). |
+| `context-view.config.schema.ts` | `ContextViewConfigSchema`, `ContextViewConfig`, `ContextViewLayout`; `DEFAULT_CONTEXT_VIEW_CONFIG`; `PartialContextViewConfigSchema`, `PartialContextViewConfig` | Full and partial schemas for the context-view feature, including inline/overlay layout (disabled and inline by default). |
 | `config.schema.ts` | `ConfigSchema`, `Config`; `PartialConfigSchema`, `PartialConfig` | Top-level schema that composes all feature schemas and exports the canonical full and partial config types. |
 
 ## Schema Composition
@@ -37,7 +37,7 @@ This directory defines the Zod-based configuration schemas for the `pi-qol` plug
     - `colors: { directory?, modelName?, anthropicUsage?: '#D97706', codexUsage?: '#10B981' }`
     - `icons: { directory?: '  ', refresh?: ' ', cache?: ' ', cacheRead?: ' ', cacheWrite?: ' ' }`
     - `display: { tokens?: true, cache?: true }`
-  - `ContextViewConfigSchema` contains only `enabled: boolean`.
+  - `ContextViewConfigSchema` contains `enabled: boolean` and `layout: 'inline' | 'overlay'`.
 - **Top-level composition**: `ConfigSchema` is a `z.object({ $schema?, auto_session_name, model_select, custom_footer, context_view })` where each feature section is a full feature schema. `PartialConfigSchema` is a parallel object where every feature section is the corresponding partial schema and all keys are optional.
 
 ## Defaults & Partial Overrides
@@ -47,7 +47,7 @@ This directory defines the Zod-based configuration schemas for the `pi-qol` plug
   - `auto_session_name`: default object `{ enabled: false }` (model is omitted).
   - `model_select`: default object `{ enabled: false, favourite: [], favourite_label: 'Favourites', groups: [], hide_tabs: { groups: false, search: false }, provider_filter: [], layout: 'inline' }` (`default_reasoning` is omitted).
   - `custom_footer`: default object is derived by `CustomFooterConfigSchema.parse({ enabled: false })`, then re-exported as `DEFAULT_CUSTOM_FOOTER_CONFIG`. This yields all nested default colors, icons, and display flags.
-  - `context_view`: default object is derived by `ContextViewConfigSchema.parse({})`, re-exported as `DEFAULT_CONTEXT_VIEW_CONFIG`.
+  - `context_view`: default object is derived by `ContextViewConfigSchema.parse({})`, re-exported as `DEFAULT_CONTEXT_VIEW_CONFIG`, yielding `{ enabled: false, layout: 'inline' }`.
 - **Partial schemas** are designed for config-layer merging:
   - `PartialAutoSessionNameConfigSchema` is generated with `AutoSessionNameConfigSchema.partial()`.
   - `PartialModelSelectConfigSchema`, `PartialCustomFooterConfigSchema`, and `PartialContextViewConfigSchema` are hand-written to make every field optional, so user/project overrides only specify the keys they want to override.
@@ -73,6 +73,7 @@ All schemas derive TypeScript types via `z.infer`:
 - `ModelConfig` from `ModelConfigSchema`
 - `ReasoningLevel` from `ReasoningLevelSchema`
 - `ModelSelectLayout` from `ModelSelectLayoutSchema`
+- `ContextViewLayout` from `ContextViewLayoutSchema`
 
 Because the full schemas use `.default()`, a successfully parsed `Config` has every top-level feature section and every required field fully present. The partial types preserve optionality for layered overrides.
 
@@ -96,7 +97,7 @@ Because the full schemas use `.default()`, a successfully parsed `Config` has ev
 - **Runtime configuration loading**: `src/config-loader.ts` imports `ConfigSchema`, `PartialConfigSchema`, and their inferred types. It is the only runtime consumer that validates and merges configs.
 - **Runtime feature consumers**:
   - `src/extensions/model-select/index.ts` uses `ModelSelectConfig`.
-  - `src/extensions/model-select/types.ts` uses `ModelSelectLayout` and `ReasoningLevel`.
+  - `src/extensions/model-select/index.ts` uses `ModelSelectLayout` for the shared presenter, while `src/extensions/model-select/types.ts` uses `ReasoningLevel` and the resolved modal frame.
   - `src/extensions/custom-footer/types.ts` re-exports `Config['custom_footer']` as `CustomFooterConfig` and derives `colors`/`display`/`icons` sub-types.
   - `src/utils/model-resolver.util.ts` uses `ModelConfig` to resolve optional `{ provider, modelId, reasoning }` into runtime Pi models.
 - **Tests**: `test/model-select/config-schema.test.ts`, `test/custom-footer/config-schema.test.ts`, `test/context-view/config-schema.test.ts`, and `test/model-select/default-reasoning.test.ts` exercise `ConfigSchema`, `PartialConfigSchema`, and `ModelSelectConfigSchema` to verify defaults, partial behavior, and validation errors.

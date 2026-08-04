@@ -257,13 +257,22 @@
     },
     "context_view": {
       "default": {
-        "enabled": false
+        "enabled": false,
+        "layout": "inline"
       },
       "type": "object",
       "properties": {
         "enabled": {
           "default": false,
           "type": "boolean"
+        },
+        "layout": {
+          "default": "inline",
+          "type": "string",
+          "enum": [
+            "inline",
+            "overlay"
+          ]
         }
       }
     }

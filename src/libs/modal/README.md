@@ -153,15 +153,22 @@ class InspectorTab implements ModalTab {
 
 `PreviewLayer` handles scrolling, the `(12/87)` overflow counter, and Esc-pops-itself. It reacts to navigation actions; raw keys are ignored.
 
-### Centered overlay
+### Inline or centered overlay
+
+Use the host-facing presenter when the modal's semantic layout is configurable. It keeps the renderer frame and host mounting options synchronized:
 
 ```ts
-// frame 'bordered' draws the rounded border; the HOST centers it:
-await ctx.ui.custom(
-  (tui, theme, keybindings, done) => new ModalDialog(tui, theme, keybindings, { frame: 'bordered', /* ... */ }),
-  { overlay: true, overlayOptions: { anchor: 'center', width: '85%', margin: 1 } },
+import { ModalDialog, presentModal } from './libs/modal/index.js';
+
+await presentModal(ctx.ui, layout, (tui, theme, keybindings, done, frame) =>
+  new ModalDialog(tui, theme, keybindings, {
+    frame,
+    // ...tabs, height, cancelValue, onComplete: done
+  }),
 );
 ```
+
+`layout` is `'inline'` or `'overlay'`. Overlay uses the bordered frame and a centered 85%-width host overlay with one-cell margin; inline uses the normal custom-UI flow and inline rules.
 
 ## Behavior contract (what users can rely on)
 
@@ -173,6 +180,10 @@ await ctx.ui.custom(
 - **Height 'half'** bounds the whole dialog to `floor(terminal.rows / 2)` lines including frame; tabs must render exactly the `height` they're given.
 
 ## API reference
+
+### `presentModal<TResult>`
+
+`presentModal(ui, layout, factory)` mounts a modal through Pi's custom-UI API. The factory receives the resolved `ModalFrame` (`'inline'` or `'bordered'`); the helper supplies the matching host overlay options for `'overlay'` and no overlay options for `'inline'`.
 
 ### `ModalDialog<TResult>` options
 

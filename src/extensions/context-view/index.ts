@@ -1,5 +1,6 @@
 import { buildSessionContext, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { ConfigLoader } from '../../config-loader';
+import { presentModal } from '../../libs/modal';
 import { InitialCaptureState, PROBE_IDENTITIES_CUSTOM_TYPE, parsePersistedIdentities, SilentProbeState } from './capture';
 import { COMMAND_NAME, PI_VIM_KEY_EVENT_ID } from './constants';
 import { prepareContextViewData } from './context-view-controller';
@@ -28,7 +29,12 @@ function activateContextView(pi: ExtensionAPI, deps: { config: ConfigLoader; ini
   };
   const openContextView = async (ctx: ExtensionContext) => {
     const data = await prepareContextViewData(pi, ctx, capture, probe);
-    await ctx.ui.custom<void>((tui, theme, keybindings, done) => new ContextViewDialog(tui, theme, keybindings, data, done));
+    const config = deps.config.getContextView();
+    await presentModal(
+      ctx.ui,
+      config.layout,
+      (tui, theme, keybindings, done, frame) => new ContextViewDialog(tui, theme, keybindings, data, done, frame),
+    );
   };
 
   restoreProbeIdentities(deps.initialCtx);

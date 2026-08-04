@@ -7,6 +7,7 @@ export { ListNavigator, type ListNavigatorOptions, PreviewScroller } from './lis
 export { ModalDialog, type ModalDialogOptions, type ModalFrame, type ModalHeight } from './modal-dialog';
 export { PiKeybindingsScheme } from './navigation/pi-scheme';
 export { VimNavigationScheme } from './navigation/vim-scheme';
+export { type ModalComponentFactory, type ModalLayout, presentModal } from './presenter';
 export { PreviewLayer, type PreviewLayerOptions } from './preview-layer';
 export { RenderCache } from './render-cache';
 export { renderTabStrip } from './tab-strip';

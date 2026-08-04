@@ -1,5 +1,5 @@
 import type { Api, Model } from '@earendil-works/pi-ai';
-import type { ModelSelectLayout } from '../../schemas/model-select.config.schema';
+import type { ModalFrame } from '../../libs/modal';
 import type { ReasoningLevel } from '../../schemas/shared-config.schema';
 
 export type ModelItem = {
@@ -37,6 +37,6 @@ export type DialogOptions = {
   defaultReasoning?: ReasoningLevel;
   configWarnings: string[];
   initialSearch: string;
-  layout: ModelSelectLayout;
+  frame: ModalFrame;
   onDone: (result: DialogResult) => void;
 };
