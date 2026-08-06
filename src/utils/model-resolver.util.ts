@@ -1,11 +1,11 @@
-import type { Api, Model } from '@earendil-works/pi-ai';
+import type { Api, Model, ProviderHeaders } from '@earendil-works/pi-ai';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { ModelConfig } from '../schemas/shared-config.schema';
 
 export type ResolvedModel = {
   model: Model<Api>;
   apiKey?: string;
-  headers?: Record<string, string>;
+  headers?: ProviderHeaders;
   reasoning?: ModelConfig['reasoning'];
   isOauth?: boolean;
 };
