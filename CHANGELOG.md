@@ -1,5 +1,12 @@
 # @0xkahi/pi-qol
 
+## 1.0.3
+
+### Patch Changes
+
+- e015d46: increase pi version to v0.84.0
+- a805c4a: fix auto_session_name empty user messages
+
 ## 1.0.2
 
 ### Patch Changes
