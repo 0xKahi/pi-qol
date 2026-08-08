@@ -8,6 +8,7 @@ export const ConfigSchema = z.object({
   $schema: z.string().optional(),
   auto_session_name: AutoSessionNameConfigSchema.default({
     enabled: false,
+    // customMessageWhitelist: [],
   }),
   model_select: ModelSelectConfigSchema.default({
     enabled: false,

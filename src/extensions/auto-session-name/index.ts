@@ -1,6 +1,7 @@
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { ConfigLoader } from '../../config-loader';
 import { ModelResolver } from '../../utils/model-resolver.util';
+// import { parseAgentContentToPrompt } from '../../utils/parse-agent-content.util';
 import { AutoSessionNameGuard } from './guards';
 import { AutoSessionNameTitleGenerator } from './title-generator';
 
@@ -17,15 +18,7 @@ export function registerAutoSessionName(pi: ExtensionAPI, deps: { config: Config
     titleController = undefined;
   });
 
-  pi.on('before_agent_start', (event, ctx) => {
-    if (!deps.config.isEnabled('auto_session_name')) return;
-    if (AutoSessionNameGuard.isSessionNameSet(pi)) return;
-    if (AutoSessionNameGuard.isChildSession({ startReason: lastSessionStartReason, manager: ctx.sessionManager })) return;
-    if (!AutoSessionNameGuard.isUsersFirstTurn(ctx.sessionManager)) return;
-
-    const userText = event.prompt?.trim();
-    if (!userText) return;
-
+  const setAutoSessionName = (ctx: ExtensionContext, text: string) => {
     const cfg = deps.config.getAutoSessionName();
     const configModel = cfg.enabled ? cfg.model : undefined;
 
@@ -42,7 +35,7 @@ export function registerAutoSessionName(pi: ExtensionAPI, deps: { config: Config
 
       const result = await AutoSessionNameTitleGenerator.generateAndApplyTitle({
         pi,
-        userText,
+        userText: text,
         resolvedModel: {
           ...resolved.result,
           reasoning: resolved.result.reasoning ?? 'minimal',
@@ -70,5 +63,43 @@ export function registerAutoSessionName(pi: ExtensionAPI, deps: { config: Config
     })().catch(err => {
       ctx.ui.notify(`(pi-qol) auto_session_name: ${JSON.stringify(err)}`, 'error');
     });
+  };
+
+  pi.on('before_agent_start', (event, ctx) => {
+    if (!deps.config.isEnabled('auto_session_name')) return;
+    if (AutoSessionNameGuard.isSessionNameSet(pi)) return;
+    if (AutoSessionNameGuard.isChildSession({ startReason: lastSessionStartReason, manager: ctx.sessionManager })) return;
+    if (!AutoSessionNameGuard.isUsersFirstTurn(ctx.sessionManager)) return;
+
+    const userText = event.prompt?.trim();
+    if (!userText) return;
+
+    setAutoSessionName(ctx, userText);
   });
+
+  // need fixing, currently does not work
+  // pi.on('message_start', (event, ctx) => {
+  //   // ctx.ui.notify('hello0', 'info');
+  //   if (!deps.config.isEnabled('auto_session_name')) return;
+  //   const whitelist = new Set(deps.config.getAutoSessionName().customMessageWhitelist);
+  //   // ctx.ui.notify(JSON.stringify(deps.config.getAutoSessionName()), 'warning');
+  //   if (whitelist.size === 0) return;
+  //   // ctx.ui.notify('hello1', 'info');
+  //   const message = event.message;
+  //   if (message.role !== 'custom' || !whitelist.has(message.customType)) {
+  //     return;
+  //   }
+  //
+  //   ctx.ui.notify('hello2', 'info');
+  //   if (AutoSessionNameGuard.isSessionNameSet(pi)) return;
+  //   ctx.ui.notify('hello3', 'info');
+  //   if (AutoSessionNameGuard.isChildSession({ startReason: lastSessionStartReason, manager: ctx.sessionManager })) return;
+  //   ctx.ui.notify('hello4', 'info');
+  //   if (!AutoSessionNameGuard.isFirstCustomExtensionMessage(ctx.sessionManager, whitelist)) return;
+  //   ctx.ui.notify('hello5', 'info');
+  //   const prompt = parseAgentContentToPrompt(message.content);
+  //   ctx.ui.notify(prompt, 'info');
+  //   if (!prompt) return;
+  //   setAutoSessionName(ctx, prompt);
+  // });
 }
