@@ -32,6 +32,10 @@ export class ConfigLoader {
     return this.config.context_view;
   }
 
+  getWorkmux(): Config['workmux'] {
+    return this.config.workmux;
+  }
+
   initializeConfig(ctx: ExtensionContext): { success: boolean; error?: string } {
     let merged: Config = this.defaultConfig;
 

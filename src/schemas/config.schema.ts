@@ -3,6 +3,7 @@ import { AutoSessionNameConfigSchema, PartialAutoSessionNameConfigSchema } from 
 import { ContextViewConfigSchema, DEFAULT_CONTEXT_VIEW_CONFIG, PartialContextViewConfigSchema } from './context-view.config.schema';
 import { CustomFooterConfigSchema, DEFAULT_CUSTOM_FOOTER_CONFIG, PartialCustomFooterConfigSchema } from './custom-footer-config.schema';
 import { ModelSelectConfigSchema, PartialModelSelectConfigSchema } from './model-select.config.schema';
+import { WorkmuxConfigSchema } from './workmux.config.schema';
 
 export const ConfigSchema = z.object({
   $schema: z.string().optional(),
@@ -21,6 +22,7 @@ export const ConfigSchema = z.object({
   }),
   custom_footer: CustomFooterConfigSchema.default(DEFAULT_CUSTOM_FOOTER_CONFIG),
   context_view: ContextViewConfigSchema.default(DEFAULT_CONTEXT_VIEW_CONFIG),
+  workmux: WorkmuxConfigSchema.default({ enabled: false }),
 });
 export type Config = z.infer<typeof ConfigSchema>;
 
@@ -30,5 +32,6 @@ export const PartialConfigSchema = z.object({
   model_select: PartialModelSelectConfigSchema.optional(),
   custom_footer: PartialCustomFooterConfigSchema.optional(),
   context_view: PartialContextViewConfigSchema.optional(),
+  workmux: WorkmuxConfigSchema.optional(),
 });
 export type PartialConfig = z.infer<typeof PartialConfigSchema>;
