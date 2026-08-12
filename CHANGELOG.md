@@ -1,5 +1,11 @@
 # @0xkahi/pi-qol
 
+## 1.0.4
+
+### Patch Changes
+
+- ed514ae: added workmux extension
+
 ## 1.0.3
 
 ### Patch Changes
