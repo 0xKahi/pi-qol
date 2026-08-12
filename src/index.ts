@@ -4,6 +4,7 @@ import { registerAutoSessionName } from './extensions/auto-session-name';
 import { registerContextView } from './extensions/context-view';
 import { registerCustomFooter } from './extensions/custom-footer';
 import { registerModelSelect } from './extensions/model-select';
+import { registerWorkmux } from './extensions/workmux';
 
 export default function (pi: ExtensionAPI) {
   const config = new ConfigLoader();
@@ -17,4 +18,5 @@ export default function (pi: ExtensionAPI) {
   registerModelSelect(pi, { config });
   registerCustomFooter(pi, { config });
   registerContextView(pi, { config });
+  registerWorkmux(pi, { config });
 }
