@@ -1,7 +1,7 @@
 import { buildSessionContext, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { ConfigLoader } from '../../config-loader';
 import { presentModal } from '../../libs/modal';
-import { InitialCaptureState, PROBE_IDENTITIES_CUSTOM_TYPE, parsePersistedIdentities, SilentProbeState } from './capture';
+import { CompactionState, InitialCaptureState, PROBE_IDENTITIES_CUSTOM_TYPE, parsePersistedIdentities, SilentProbeState } from './capture';
 import { COMMAND_NAME, PI_VIM_KEY_EVENT_ID } from './constants';
 import { prepareContextViewData } from './context-view-controller';
 import { ContextViewDialog } from './ui/context-view-dialog';
@@ -9,6 +9,7 @@ import { ContextViewDialog } from './ui/context-view-dialog';
 function activateContextView(pi: ExtensionAPI, deps: { config: ConfigLoader; initialCtx: ExtensionContext }): void {
   const capture = new InitialCaptureState();
   const probe = new SilentProbeState();
+  const compaction = new CompactionState();
   let persistedIdentityCount = 0;
   let latestCtx: ExtensionContext = deps.initialCtx;
   const enabled = () => deps.config.isEnabled('context_view');
@@ -28,7 +29,7 @@ function activateContextView(pi: ExtensionAPI, deps: { config: ConfigLoader; ini
     persistedIdentityCount = identities.length;
   };
   const openContextView = async (ctx: ExtensionContext) => {
-    const data = await prepareContextViewData(pi, ctx, capture, probe);
+    const data = await prepareContextViewData(pi, ctx, capture, probe, compaction);
     const config = deps.config.getContextView();
     await presentModal(
       ctx.ui,
@@ -40,8 +41,14 @@ function activateContextView(pi: ExtensionAPI, deps: { config: ConfigLoader; ini
   restoreProbeIdentities(deps.initialCtx);
   pi.on('session_start', (_event, ctx) => {
     latestCtx = ctx;
+    compaction.finish();
     if (enabled()) restoreProbeIdentities(ctx);
   });
+  pi.on('session_before_compact', event => {
+    if (enabled()) compaction.begin(event.signal);
+  });
+  pi.on('session_compact', () => compaction.finish());
+  pi.on('session_compact_failed', () => compaction.finish());
   pi.on('input', event => {
     if (enabled()) probe.observeInput(event.source, event.text);
   });
@@ -64,15 +71,14 @@ function activateContextView(pi: ExtensionAPI, deps: { config: ConfigLoader; ini
   pi.on('context', (event, ctx) => {
     if (!enabled()) return;
     const messages = probe.filterMessages(event.messages);
-    const baselineMessages = probe.filterMessages(buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages);
-    capture.finalize({
+    capture.finalize(() => ({
       systemPrompt: ctx.getSystemPrompt(),
       messages,
-      baselineMessages,
+      baselineMessages: probe.filterMessages(buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages),
       allTools: pi.getAllTools(),
       activeToolNames: pi.getActiveTools(),
       origin: probe.isCurrentRun ? 'synthetic-probe' : 'real-turn',
-    });
+    }));
     return messages === event.messages ? undefined : { messages };
   });
   pi.on('agent_settled', (_event, ctx) => {
@@ -82,6 +88,7 @@ function activateContextView(pi: ExtensionAPI, deps: { config: ConfigLoader; ini
     persistProbeIdentities();
   });
   pi.on('session_shutdown', () => {
+    compaction.finish();
     if (!enabled()) return;
     persistProbeIdentities();
     probe.fail('Session ended before the silent probe completed.');

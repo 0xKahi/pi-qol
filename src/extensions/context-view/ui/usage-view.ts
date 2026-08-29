@@ -26,7 +26,9 @@ import {
 import type { ContextUsageSnapshot, UsageCategory, UsagePreviewEntry } from '../model';
 import { collectPreviewEntries } from '../usage';
 import { normalizeInlineText, normalizePreviewText } from './injections-model';
+import { previewBodyLines } from './section-preview';
 import { splitSkillPreview } from './skill-preview';
+import { UsageBlockLayer } from './usage-block-layer';
 import { buildUsageMap, calculateFitMapScale, DEFAULT_MAP_COLUMNS, DEFAULT_MAP_ROWS, type UsageMapCell } from './usage-map';
 
 const USAGE_DESCRIPTION =
@@ -36,7 +38,6 @@ const INVISIBLE_REASONING_DESCRIPTION =
   '≈ is a provider-reported count; ~ is a rough approximation when no breakdown ' +
   'is reported and excluded from category totals. ' +
   'Encoded replaces Reasoning when the provider replays encrypted reasoning with its message.';
-const PREVIEW_ENTRY_MAX_LINES = 20;
 const DETAIL_CATEGORY_HEADER_LINE_COUNT = 1;
 const CURSOR_COLUMN_WIDTH = 2;
 const MAX_LEGEND_VALUE_COLUMN = 32;
@@ -96,9 +97,6 @@ export class UsageView implements ModalTab {
   private context: ModalTabContext | undefined;
   private mapScale: UsageMapScale = 'window';
   private currentWidth: number | undefined;
-  private cachedPreviewEntries: readonly UsagePreviewEntry[] | undefined;
-  private previewLines: string[] | undefined;
-  private previewWrapWidth: number | undefined;
 
   /** Create a view over one precomputed usage snapshot. */
   public constructor(theme: Theme, input: UsageViewInput) {
@@ -167,8 +165,6 @@ export class UsageView implements ModalTab {
 
   /** Invalidate theme-dependent rendered output. */
   public invalidate(): void {
-    this.previewLines = undefined;
-    this.previewWrapWidth = undefined;
     this.cache.clear();
   }
 
@@ -239,7 +235,7 @@ export class UsageView implements ModalTab {
     const scaleTokens = this.mapScale === 'fit' ? this.fitMapScale : undefined;
     const map = buildUsageMap(this.usage, DEFAULT_MAP_COLUMNS, DEFAULT_MAP_ROWS, scaleTokens);
     if (map === undefined || width < MAP_SIDE_BY_SIDE_MIN_WIDTH) {
-      return this.detailLines(width, rows, false).map(line => this.fit(line, width));
+      return this.detailLines(width, rows).map(line => this.fit(line, width));
     }
 
     const spaced = width >= SPACED_MAP_MIN_WIDTH;
@@ -252,7 +248,7 @@ export class UsageView implements ModalTab {
     const mapWidth = BODY_INDENT.length + map.columns + (spaced ? map.columns - 1 : 0);
     const gap = spaced ? SPACED_MAP_COLUMN_GAP : MAP_COLUMN_GAP;
     const detailWidth = Math.max(1, width - mapWidth - gap);
-    const details = this.detailLines(detailWidth, rows, true);
+    const details = this.detailLines(detailWidth, rows, map.blockTokens, map.cells.length);
     const lineCount = Math.max(mapLines.length, details.length);
     return Array.from({ length: lineCount }, (_, index) => {
       const mapLine = mapLines[index] ?? ' '.repeat(mapWidth);
@@ -262,10 +258,10 @@ export class UsageView implements ModalTab {
   }
 
   /** Map-fill key, category heading, selectable category legend viewport, and scroll counter. */
-  private detailLines(width: number, rows: number, includeMapKey: boolean): string[] {
+  private detailLines(width: number, rows: number, blockTokens?: number, cellCount?: number): string[] {
     const theme = this.theme;
-    const showMapKey = includeMapKey && rows >= 4;
-    const headerLineCount = DETAIL_CATEGORY_HEADER_LINE_COUNT + (showMapKey ? 2 : 0);
+    const mapKey = blockTokens === undefined || cellCount === undefined ? [] : this.mapKeyLines(width, rows, blockTokens, cellCount);
+    const headerLineCount = DETAIL_CATEGORY_HEADER_LINE_COUNT + mapKey.length;
     // The counter sits below the last legend row, so it consumes one of the available rows.
     const viewport = calculateViewport(this.legendRows.length, rows, headerLineCount);
     this.navigator.setVisibleCount(viewport.visibleCount);
@@ -286,17 +282,19 @@ export class UsageView implements ModalTab {
     const counterLines = viewport.showScroll
       ? [this.fit(theme.fg('dim', `${BODY_INDENT}(${this.navigator.visibleEnd}/${this.legendRows.length})`), width)]
       : [];
-    return [...(showMapKey ? [this.mapKeyLine(width), ''] : []), heading, ...visibleRows, ...counterLines].slice(0, rows);
+    return [...mapKey, heading, ...visibleRows, ...counterLines].slice(0, rows);
   }
 
-  /** Explain only the map's full and partial occupancy glyphs. */
-  private mapKeyLine(width: number): string {
+  /** Explain map occupancy and the active token/share scale responsively. */
+  private mapKeyLines(width: number, rows: number, blockTokens: number, cellCount: number): string[] {
     const theme = this.theme;
     const heading = theme.fg('mdHeading', theme.bold('Map:'));
     const separator = theme.fg('dim', ' · ');
     const full = `${theme.fg('text', FULL_CELL)}${theme.fg('muted', ' Full')}`;
     const partial = `${theme.fg('text', PARTIAL_CELL)}${theme.fg('muted', ' Part')}`;
-    return this.fit(`${heading} ${full}${separator}${partial}`, width);
+    const size = theme.fg('muted', `${formatTokens(Math.round(blockTokens))}/cell (${formatPercent(1 / cellCount)} of map)`);
+    if (rows < 5) return [this.fit(`${heading} ${size}`, width), ''];
+    return [this.fit(`${heading} ${full}${separator}${partial}`, width), this.fit(`${theme.fg('mdHeading', 'Block Size:')} ${size}`, width), ''];
   }
 
   /** Pi-reported usage/window metadata, with a marked estimate when current usage is unknown. */
@@ -413,48 +411,37 @@ export class UsageView implements ModalTab {
 
   // === Preview ===
 
-  /** Open the selected category's content preview as a shell-managed layer. */
+  /** Open the selected category as a selectable chronological block stream. */
   private openPreview(): void {
     const row = this.legendRows[this.navigator.selected];
     if (row === undefined || row.type !== 'category') return;
-    this.cachedPreviewEntries = undefined;
-    this.previewLines = undefined;
-    this.previewWrapWidth = undefined;
-
+    const entries = collectPreviewEntries(row.category);
+    const compactSkills = row.rootId === 'user-messages';
     const percent = this.plainLegendPercent(row.category.tokens);
     this.context?.pushLayer(
-      new PreviewLayer(this.theme, {
+      new UsageBlockLayer(this.theme, {
         title: () => this.theme.fg('accent', this.theme.bold(normalizeInlineText(row.category.label))),
         meta: () => this.theme.fg('muted', `${formatTokens(row.category.tokens)}${percent === '' ? '' : ` · ${percent}`}`),
-        body: width => this.previewBodyLines(width, row),
-        description: width => this.previewDescriptionLines(width, row),
+        entries,
+        entryHeader: entry => this.entryHeader(entry),
+        entryBody: (entry, width) => this.entryContentLines(entry, Math.max(10, width - BODY_INDENT.length * 2 - 1), compactSkills),
+        description: width => this.previewDescriptionLines(width, row, entries),
+        openFullContent: entry => this.openFullContent(row, entry, compactSkills),
       }),
     );
   }
 
-  /** Cached wrapped entry stream: bracket headers plus capped sanitized content. */
-  private previewBodyLines(width: number, row: CategoryLegendRow): string[] {
-    const wrapWidth = Math.max(10, width - BODY_INDENT.length * 2 - 1);
-    if (this.previewLines !== undefined && this.previewWrapWidth === wrapWidth) return this.previewLines;
-    const entries = this.previewEntries(row);
-    const compactSkills = row.rootId === 'user-messages';
-    const lines =
-      entries.length === 0
-        ? [this.fit(this.theme.fg('muted', `${BODY_INDENT}No content captured for this category.`), width)]
-        : entries.flatMap((entry, index) => [
-            ...(index === 0 ? [] : ['']),
-            this.fit(`${BODY_INDENT}${this.entryHeader(entry)}`, width),
-            ...this.entryContentLines(entry, wrapWidth, compactSkills),
-          ]);
-    this.previewLines = lines;
-    this.previewWrapWidth = wrapWidth;
-    return lines;
-  }
-
-  /** Collect and cache the immutable entries shared by preview body and description rendering. */
-  private previewEntries(row: CategoryLegendRow): readonly UsagePreviewEntry[] {
-    this.cachedPreviewEntries ??= collectPreviewEntries(row.category);
-    return this.cachedPreviewEntries;
+  /** Push an uncapped scrollable view for one truncated block. */
+  private openFullContent(row: CategoryLegendRow, entry: UsagePreviewEntry, compactSkills: boolean): void {
+    const breadcrumb = entry.breadcrumb.map(normalizeInlineText).filter(Boolean).join(' / ');
+    this.context?.pushLayer(
+      new PreviewLayer(this.theme, {
+        title: () => this.theme.fg('accent', this.theme.bold(breadcrumb || normalizeInlineText(row.category.label))),
+        meta: () => this.theme.fg('muted', formatTokens(entry.tokens)),
+        // Match the block stream's two-column selection gutter so its hidden-line count stays exact.
+        body: width => this.entryContentLines(entry, Math.max(10, width - BODY_INDENT.length * 2 - 3), compactSkills),
+      }),
+    );
   }
 
   /** Bracketed entry header: dim datetime, breadcrumbs, visible tokens, and optional invisible reasoning. */
@@ -480,27 +467,25 @@ export class UsageView implements ModalTab {
   }
 
   /** Fixed explanation shown only when the thinking preview contains invisible-reasoning metadata. */
-  private previewDescriptionLines(width: number, row: CategoryLegendRow): string[] {
+  private previewDescriptionLines(width: number, row: CategoryLegendRow, entries: readonly UsagePreviewEntry[]): string[] {
     if (row.rootId !== 'agent-thinking-messages') return [];
-    const hasInvisibleReasoning = this.previewEntries(row).some(entry => entry.invisibleReasoning !== undefined);
+    const hasInvisibleReasoning = entries.some(entry => entry.invisibleReasoning !== undefined);
     return hasInvisibleReasoning ? wrapDescriptionLines(this.theme, INVISIBLE_REASONING_DESCRIPTION, 'dim', width) : [];
   }
 
   /** Sanitized, wrapped, per-entry-capped content lines indented under the header. */
   private entryContentLines(entry: UsagePreviewEntry, wrapWidth: number, compactSkills: boolean): string[] {
     const indent = BODY_INDENT.repeat(2);
-    const lines: string[] = [];
-    let hidden = 0;
-    for (const paragraph of this.entryPreviewText(entry.text, compactSkills).split('\n')) {
-      const wrapped = wrapTextWithAnsi(paragraph, wrapWidth);
-      const paragraphLines = wrapped.length === 0 ? [''] : wrapped;
-      for (const line of paragraphLines) {
-        if (lines.length < PREVIEW_ENTRY_MAX_LINES) lines.push(line === '' ? '' : `${indent}${line}`);
-        else hidden++;
+    const wrapText = (text: string): string[] => {
+      const lines: string[] = [];
+      for (const paragraph of this.entryPreviewText(text, compactSkills).split('\n')) {
+        const wrapped = wrapTextWithAnsi(paragraph, wrapWidth);
+        const paragraphLines = wrapped.length === 0 ? [''] : wrapped;
+        for (const line of paragraphLines) lines.push(line === '' ? '' : `${indent}${line}`);
       }
-    }
-    if (hidden === 0) return lines;
-    return [...lines, `${indent}${this.theme.fg('dim', `… +${hidden} lines`)}`];
+      return lines;
+    };
+    return previewBodyLines(this.theme, entry, wrapWidth, wrapText);
   }
 
   /** Sanitize raw entry text and replace complete attached skills with pi-colored badges. */

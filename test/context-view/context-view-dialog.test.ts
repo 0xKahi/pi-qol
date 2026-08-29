@@ -19,13 +19,13 @@ const usage: ContextUsageSnapshot = {
   estimatedTokens: 20,
 };
 
-function createDialog(rows = 24, frame: ModalFrame = 'inline'): ContextViewDialog {
+function createDialog(rows = 24, frame: ModalFrame = 'inline', usageInput: ContextUsageSnapshot = usage): ContextViewDialog {
   const tui = { terminal: { rows }, requestRender: () => undefined };
   return new ContextViewDialog(
     tui as never,
     theme,
     { matches: () => false } as unknown as KeybindingsManager,
-    { usage, initial: buildSnapshot([], 'real-turn', new Date()) },
+    { usage: usageInput, initial: buildSnapshot([], 'real-turn', new Date()) },
     () => undefined,
     frame,
   );
@@ -52,6 +52,43 @@ describe('ContextViewDialog', () => {
     expect(dialog.activeTab).toBe('usage');
     dialog.handleInput('\u001b[Z');
     expect(dialog.activeTab).toBe('injections');
+  });
+
+  test('shows map block size only when the proportional map is available', () => {
+    const dialog = createDialog(40);
+    expect(dialog.render(100).join('\n')).toContain('Block Size:');
+    expect(dialog.render(100).join('\n')).toContain('/cell');
+    expect(dialog.render(40).join('\n')).not.toContain('/cell');
+  });
+
+  test('opens truncated Usage blocks as nested full-content previews and restores block state', () => {
+    const longUsage: ContextUsageSnapshot = {
+      ...usage,
+      categories: [{
+        id: 'long',
+        label: 'Long',
+        tokens: 30,
+        entries: [
+          { breadcrumb: ['first'], tokens: 20, text: Array.from({ length: 30 }, (_, index) => `long line ${index + 1}`).join('\n') },
+          { breadcrumb: ['second'], tokens: 10, text: 'complete second block' },
+        ],
+      }],
+      estimatedTokens: 30,
+    };
+    const dialog = createDialog(40, 'inline', longUsage);
+    dialog.handleInput('\r');
+    expect(dialog.render(100).join('\n')).toContain('… +');
+    dialog.handleInput('\r');
+    dialog.render(100);
+    dialog.handleInput('G');
+    const full = dialog.render(100).join('\n');
+    expect(full).toContain('long line 30');
+    dialog.handleInput('\u001b');
+    expect(dialog.render(100).join('\n')).toContain('→ [first]');
+    dialog.handleInput('\t');
+    expect(dialog.activeTab).toBe('injections');
+    dialog.handleInput('\t');
+    expect(dialog.render(100).join('\n')).toContain('→ [first]');
   });
 
   test('retains child state and permits tab switching from a preview', () => {

@@ -13,6 +13,7 @@ import { AGGREGATE_SOURCE_ID, buildSnapshot, type CaptureOrigin, type InitialSna
 export const PROBE_IDENTITIES_CUSTOM_TYPE = 'pi-context-view:probe-identities';
 
 const DEFAULT_PROBE_TIMEOUT_MS = 5_000;
+const SETUP_ABORT_ERROR_MESSAGE = 'This operation was aborted';
 const AGGREGATE_SOURCE: InjectionSource = {
   id: AGGREGATE_SOURCE_ID,
   label: 'extensions (aggregate)',
@@ -97,10 +98,11 @@ export class InitialCaptureState {
    * Freeze the Initial snapshot from the first context event. Returns the
    * existing snapshot on repeat calls, or undefined when `prepare()` never ran.
    */
-  public finalize(input: CaptureFinalization): InitialSnapshot | undefined {
+  public finalize(buildInput: CaptureFinalization | (() => CaptureFinalization)): InitialSnapshot | undefined {
     if (this.initialSnapshot !== undefined) return this.initialSnapshot;
     if (this.pendingPreparation === undefined) return undefined;
 
+    const input = typeof buildInput === 'function' ? buildInput() : buildInput;
     const preparation = this.pendingPreparation;
     const tools = captureActiveTools(input.allTools, input.activeToolNames, {
       toolSnippets: preparation.toolSnippets,
@@ -112,6 +114,33 @@ export class InitialCaptureState {
     this.initialSnapshot = buildSnapshot(items, input.origin, input.capturedAt ?? new Date());
     this.pendingPreparation = undefined;
     return this.initialSnapshot;
+  }
+}
+
+/** Track the currently active session compaction without retaining stale signals. */
+export class CompactionState {
+  private currentSignal: AbortSignal | undefined;
+
+  public get isActive(): boolean {
+    return this.currentSignal !== undefined && !this.currentSignal.aborted;
+  }
+
+  /** Begin tracking a live compaction signal; already-aborted signals are ignored. */
+  public begin(signal: AbortSignal): void {
+    if (signal.aborted) return;
+    this.currentSignal = signal;
+    signal.addEventListener(
+      'abort',
+      () => {
+        if (this.currentSignal === signal) this.currentSignal = undefined;
+      },
+      { once: true },
+    );
+  }
+
+  /** Finish either a successful or failed compaction lifecycle. */
+  public finish(): void {
+    this.currentSignal = undefined;
   }
 }
 
@@ -200,10 +229,10 @@ export class SilentProbeState {
    * so pi does not render an "Operation aborted" transcript row.
    */
   public sanitizeAssistant(message: ContextEvent['messages'][number]): ContextEvent['messages'][number] | undefined {
-    if (!this.isCurrentRun || message.role !== 'assistant' || message.stopReason !== 'aborted') {
-      return undefined;
-    }
-    this.recordMessage(message);
+    const expectedAbort =
+      message.role === 'assistant' &&
+      (message.stopReason === 'aborted' || (message.stopReason === 'error' && message.errorMessage === SETUP_ABORT_ERROR_MESSAGE));
+    if (!this.isCurrentRun || !expectedAbort) return undefined;
     const identity = { role: 'assistant', timestamp: message.timestamp } satisfies SyntheticMessageIdentity;
     if (!this.identities.has(identityKey(identity))) return undefined;
     return { ...message, content: [], stopReason: 'stop', errorMessage: undefined };

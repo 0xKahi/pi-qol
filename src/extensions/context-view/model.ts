@@ -27,6 +27,14 @@ export interface InjectionSource {
   readonly native: boolean;
 }
 
+/** One labeled part of an item's raw text, used only to shape its preview. */
+export interface InjectionSection {
+  readonly label: string;
+  readonly text: string;
+  /** Share of the parent estimate; sections sum exactly to the item total. */
+  readonly tokens: number;
+}
+
 /** One measured context injection. */
 export interface InjectionItem {
   /** Stable id, unique within a snapshot. */
@@ -41,6 +49,8 @@ export interface InjectionItem {
   readonly tokens: number;
   /** Raw injected text for preview. Process-local; never log or persist. */
   readonly text: string;
+  /** Labeled parts of `text`; never additional tokens. */
+  readonly sections?: readonly InjectionSection[];
   /** True when a message exists only in the transformed provider context, not the session branch. */
   readonly contextOnly?: boolean;
   /** Constituent sub-items (e.g. individual built-in tools or skills), largest first. */
@@ -99,6 +109,8 @@ export interface UsagePreviewEntry {
   readonly invisibleReasoning?: InvisibleReasoningEstimate;
   /** Raw content for preview. Process-local; never log or persist. */
   readonly text: string;
+  /** Labeled parts carried from a measured snapshot item. */
+  readonly sections?: readonly InjectionSection[];
 }
 
 /** Pi-reported usage; tokens/percent are omitted when unknown (e.g. right after compaction). */
@@ -168,6 +180,7 @@ function copyItem(item: InjectionItem): InjectionItem {
   return {
     ...item,
     source: { ...item.source },
+    sections: item.sections?.map(section => ({ ...section })),
     children: item.children?.map(child => copyItem(child)),
   };
 }

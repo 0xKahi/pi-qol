@@ -44,6 +44,9 @@ describe('Context View registration', () => {
     app.handlers.get('session_start')?.[0]?.({}, ctx);
     expect(app.commands.has('context-view')).toBe(true);
     expect(app.eventHandlers.has('pi.vimKeys.event:pi-qol.context_view')).toBe(true);
+    expect(app.handlers.has('session_before_compact')).toBe(true);
+    expect(app.handlers.has('session_compact')).toBe(true);
+    expect(app.handlers.has('session_compact_failed')).toBe(true);
 
     await app.commands.get('context-view')?.handler('unexpected', ctx);
     expect(ctx.notifications.at(-1)?.[0]).toBe('/context-view accepts no arguments.');

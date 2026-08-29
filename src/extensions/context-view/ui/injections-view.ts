@@ -23,6 +23,7 @@ import {
 } from '../../../libs/modal';
 import type { InitialSnapshot, InjectionItem } from '../model';
 import { buildInjectionRows, collectItemsById, type InjectionRow, normalizeInlineText, normalizePreviewText } from './injections-model';
+import { previewBodyLines } from './section-preview';
 
 const LIST_DESCRIPTION = 'Injections into the model context for the first turn, with token estimates.';
 const CURSOR_COLUMN_WIDTH = 2;
@@ -146,19 +147,18 @@ export class InjectionsView implements ModalTab {
     if (this.previewItem === item && this.previewLines !== undefined && this.previewWrapWidth === wrapWidth) {
       return this.previewLines;
     }
-    const text = normalizePreviewText(item.text);
-    const lines: string[] = [];
-    for (const paragraph of text.split('\n')) {
-      const wrapped = wrapTextWithAnsi(paragraph, wrapWidth);
-      if (wrapped.length === 0) {
-        lines.push('');
-        continue;
+    const wrapText = (text: string): string[] => {
+      const lines: string[] = [];
+      for (const paragraph of normalizePreviewText(text).split('\n')) {
+        const wrapped = wrapTextWithAnsi(paragraph, wrapWidth);
+        if (wrapped.length === 0) lines.push('');
+        else for (const line of wrapped) lines.push(`${BODY_INDENT}${line}`);
       }
-      for (const line of wrapped) lines.push(`${BODY_INDENT}${line}`);
-    }
-    this.previewLines = lines;
+      return lines;
+    };
+    this.previewLines = previewBodyLines(this.theme, item, wrapWidth, wrapText);
     this.previewWrapWidth = wrapWidth;
-    return lines;
+    return this.previewLines;
   }
 
   // === List rendering ===

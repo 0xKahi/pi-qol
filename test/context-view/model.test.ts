@@ -63,14 +63,17 @@ test('buildSnapshot owns nested input data and computes the total', () => {
     chars: 12,
     tokens: 3,
     text: 'hello world!',
+    sections: [{ label: 'Definition', text: 'hello world!', tokens: 3 }],
   };
   const capturedAt = new Date('2026-07-10T12:00:00Z');
   const snapshot = buildSnapshot([input], 'real-turn', capturedAt);
 
   source.label = 'changed';
+  if (input.sections !== undefined) (input.sections[0] as { label: string }).label = 'changed';
   capturedAt.setFullYear(2000);
 
   assert.equal(snapshot.groups[0]?.source.label, 'test');
+  assert.equal(snapshot.groups[0]?.items[0]?.sections?.[0]?.label, 'Definition');
   assert.equal(snapshot.capturedAt.toISOString(), '2026-07-10T12:00:00.000Z');
   assert.equal(snapshot.totalTokens, 3);
 });

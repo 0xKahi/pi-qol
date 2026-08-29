@@ -12,7 +12,7 @@
  *   optionally preceded by a "Current date" line (pi 0.80)
  *   → anything after that footer was appended by before_agent_start handlers.
  */
-import { AGGREGATE_SOURCE_ID, type InjectionItem, type InjectionKind, type InjectionSource, PI_SOURCE_ID } from './model';
+import { AGGREGATE_SOURCE_ID, type InjectionItem, type InjectionKind, type InjectionSection, type InjectionSource, PI_SOURCE_ID } from './model';
 
 const PI_SOURCE: InjectionSource = { id: PI_SOURCE_ID, label: 'pi', native: true };
 const AGGREGATE_SOURCE: InjectionSource = {
@@ -87,7 +87,11 @@ export function analyzeSystemPrompt(systemPrompt: string, options: PromptOptions
 
 /** Same chars/4 heuristic pi's estimateTokens uses for text content. */
 export function textTokens(text: string): number {
-  return Math.ceil(text.length / 4);
+  return charTokens(text.length);
+}
+
+function charTokens(chars: number): number {
+  return Math.ceil(chars / 4);
 }
 
 /**
@@ -96,30 +100,18 @@ export function textTokens(text: string): number {
  * tools collapse into one aggregate pi-native item.
  */
 function measureTools(base: string, tools: ToolSlice[], items: InjectionItem[], carvedSpans: Span[]): void {
+  const carver = createPromptCarver(base, carvedSpans);
+  const claimedGuidelines = new Set(piOwnedGuidelines(tools));
   const builtinChildren: InjectionItem[] = [];
   for (const tool of tools) {
-    const definition = `${tool.name}: ${tool.description}\n${tool.parametersJson}`;
+    const ownedGuidelines = claimGuidelines(tool, claimedGuidelines);
+    const definition: SectionDraft = { label: 'Definition', text: `${tool.name}: ${tool.description}\n${tool.parametersJson}` };
     if (tool.source === 'builtin') {
-      builtinChildren.push(createItem(`tool:builtin:${tool.name}`, 'tool', PI_SOURCE, tool.name, definition));
+      builtinChildren.push(createToolItem(`tool:builtin:${tool.name}`, PI_SOURCE, tool.name, [definition]));
       continue;
     }
-    let promptText = '';
-    if (tool.snippet !== undefined) {
-      const span = findExactSpan(base, `\n- ${tool.name}: ${tool.snippet}`);
-      if (span !== undefined) {
-        promptText += base.slice(span.start, span.end);
-        carvedSpans.push(span);
-      }
-    }
-    for (const guideline of tool.guidelines) {
-      const span = findExactSpan(base, `\n- ${guideline.trim()}`);
-      if (span !== undefined) {
-        promptText += base.slice(span.start, span.end);
-        carvedSpans.push(span);
-      }
-    }
-    const source = extensionSource(tool.source);
-    items.push(createItem(`tool:${tool.source}:${tool.name}`, 'tool', source, tool.name, promptText + definition));
+    const sections = [...carveToolPromptSections(carver, tool, ownedGuidelines), definition];
+    items.push(createToolItem(`tool:${tool.source}:${tool.name}`, extensionSource(tool.source), tool.name, sections));
   }
   if (builtinChildren.length > 0) {
     builtinChildren.sort((a, b) => b.tokens - a.tokens);
@@ -132,6 +124,74 @@ function measureTools(base: string, tools: ToolSlice[], items: InjectionItem[], 
       children: builtinChildren,
     });
   }
+}
+
+interface SectionDraft {
+  readonly label: string;
+  readonly text: string;
+}
+
+function carveToolPromptSections(carver: PromptCarver, tool: ToolSlice, ownedGuidelines: string[]): SectionDraft[] {
+  const sections: SectionDraft[] = [];
+  const snippet = tool.snippet === undefined ? undefined : carveBlockLine(carver, carver.toolsBlock, `\n- ${tool.name}: ${tool.snippet}`);
+  if (snippet !== undefined) sections.push({ label: 'Prompt Snippet', text: snippet });
+  let bullets = '';
+  for (const guideline of ownedGuidelines) bullets += carveBlockLine(carver, carver.guidelinesBlock, `\n- ${guideline}`) ?? '';
+  if (bullets.length > 0) sections.push({ label: 'Guidelines', text: bullets });
+  return sections;
+}
+
+interface PromptCarver {
+  readonly base: string;
+  readonly toolsBlock: Span | undefined;
+  readonly guidelinesBlock: Span | undefined;
+  readonly carvedSpans: Span[];
+}
+
+function createPromptCarver(base: string, carvedSpans: Span[]): PromptCarver {
+  return {
+    base,
+    toolsBlock: findBulletBlock(base, '\nAvailable tools:\n'),
+    guidelinesBlock: findBulletBlock(base, '\nGuidelines:\n'),
+    carvedSpans,
+  };
+}
+
+function findBulletBlock(text: string, header: string): Span | undefined {
+  const headerStart = text.indexOf(header);
+  if (headerStart === -1) return undefined;
+  const start = headerStart + header.length - 1;
+  const blank = text.indexOf('\n\n', start);
+  return { start, end: blank === -1 ? text.length : blank };
+}
+
+function carveBlockLine(carver: PromptCarver, block: Span | undefined, line: string): string | undefined {
+  if (block === undefined) return undefined;
+  const start = carver.base.indexOf(line, block.start);
+  if (start === -1 || start + line.length > block.end) return undefined;
+  const span = { start, end: start + line.length };
+  carver.carvedSpans.push(span);
+  return carver.base.slice(span.start, span.end);
+}
+
+function piOwnedGuidelines(tools: ToolSlice[]): string[] {
+  const names = new Set(tools.map(tool => tool.name));
+  const shellOnly = (names.has('bash') || names.has('powershell')) && !names.has('grep') && !names.has('find') && !names.has('ls');
+  if (!shellOnly) return [];
+  if (names.has('bash') && names.has('powershell')) return ['Use bash or PowerShell for file operations like listing, searching, and finding files'];
+  if (names.has('powershell')) return ['Use PowerShell for file operations like listing, searching, and finding files'];
+  return ['Use bash for file operations like ls, rg, find'];
+}
+
+function claimGuidelines(tool: ToolSlice, claimed: Set<string>): string[] {
+  const owned: string[] = [];
+  for (const guideline of tool.guidelines) {
+    const text = guideline.trim();
+    if (text.length === 0 || claimed.has(text)) continue;
+    claimed.add(text);
+    owned.push(text);
+  }
+  return owned;
 }
 
 /** Measure context-file contents without counting pi's XML transport scaffolding. */
@@ -185,6 +245,25 @@ function createItem(id: string, kind: InjectionKind, source: InjectionSource, la
     tokens: textTokens(text),
     text,
   };
+}
+
+/** Build a tool item whose text is exactly the concatenation of its sections. */
+function createToolItem(id: string, source: InjectionSource, label: string, sections: SectionDraft[]): InjectionItem {
+  const text = sections.map(section => section.text).join('');
+  return { ...createItem(id, 'tool', source, label, text), sections: allocateSectionTokens(sections) };
+}
+
+/** Allocate cumulative token deltas so rounded sections reconcile exactly. */
+function allocateSectionTokens(sections: SectionDraft[]): InjectionSection[] {
+  let chars = 0;
+  let allocated = 0;
+  return sections.map(section => {
+    chars += section.text.length;
+    const cumulative = charTokens(chars);
+    const tokens = cumulative - allocated;
+    allocated = cumulative;
+    return { ...section, tokens };
+  });
 }
 
 /** Build an aggregate whose totals exactly reconcile with its child items. */
@@ -251,12 +330,6 @@ function findBasePromptFooter(systemPrompt: string, cwd: string): Span | undefin
     cwdStart = systemPrompt.lastIndexOf(cwdLine, cwdStart - 1);
   }
   return undefined;
-}
-
-/** Span of the first exact occurrence of needle, or undefined. */
-function findExactSpan(haystack: string, needle: string): Span | undefined {
-  const start = haystack.indexOf(needle);
-  return start === -1 ? undefined : { start, end: start + needle.length };
 }
 
 /** Span of pi's complete project-context transport section. */

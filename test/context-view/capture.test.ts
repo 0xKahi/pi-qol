@@ -5,6 +5,7 @@ import type { BuildSystemPromptOptions, ContextEvent, ToolInfo } from '@earendil
 
 import {
   captureActiveTools,
+  CompactionState,
   copyPromptOptions,
   InitialCaptureState,
   measureInjectedMessages,
@@ -133,7 +134,7 @@ test('InitialCaptureState owns prepared options before later handlers can mutate
   if (options.toolSnippets !== undefined) options.toolSnippets.search = 'Changed snippet';
 
   const snapshot = state.finalize({
-    systemPrompt: 'Base\n- search: Original snippet',
+    systemPrompt: 'Base\nAvailable tools:\n- search: Original snippet\n',
     messages: [],
     baselineMessages: [],
     allTools: [tool('search', 'npm:web')],
@@ -185,6 +186,33 @@ test('InitialCaptureState refreshes pending options and freezes the first snapsh
   assert.equal(second.capturedAt.toISOString(), '2026-07-10T12:00:00.000Z');
 });
 
+test('InitialCaptureState skips lazy finalization work after freeze while retaining latest options', () => {
+  const state = new InitialCaptureState();
+  state.prepare({ cwd: '/tmp' });
+  let builds = 0;
+  const first = state.finalize(() => {
+    builds++;
+    return {
+      systemPrompt: 'Base',
+      messages: [],
+      baselineMessages: [],
+      allTools: [],
+      activeToolNames: [],
+      origin: 'real-turn',
+    };
+  });
+  state.prepare({ cwd: '/updated', appendSystemPrompt: 'latest' });
+  const second = state.finalize(() => {
+    builds++;
+    throw new Error('must not run');
+  });
+
+  assert.strictEqual(second, first);
+  assert.equal(builds, 1);
+  assert.equal(state.promptOptions?.cwd, '/updated');
+  assert.equal(state.promptOptions?.appendSystemPrompt, 'latest');
+});
+
 test('InitialCaptureState does not finalize before prepare', () => {
   const state = new InitialCaptureState();
   assert.equal(
@@ -198,6 +226,29 @@ test('InitialCaptureState does not finalize before prepare', () => {
     }),
     undefined,
   );
+});
+
+test('CompactionState follows the current lifecycle signal', () => {
+  const state = new CompactionState();
+  const first = new AbortController();
+  const second = new AbortController();
+  const alreadyAborted = new AbortController();
+  alreadyAborted.abort();
+
+  state.begin(alreadyAborted.signal);
+  assert.equal(state.isActive, false);
+  state.begin(first.signal);
+  assert.equal(state.isActive, true);
+  state.begin(second.signal);
+  first.abort();
+  assert.equal(state.isActive, true);
+  second.abort();
+  assert.equal(state.isActive, false);
+  state.begin(first.signal);
+  assert.equal(state.isActive, false);
+  state.begin(new AbortController().signal);
+  state.finish();
+  assert.equal(state.isActive, false);
 });
 
 test('SilentProbeState sanitizes and filters only exact probe identities', async () => {
@@ -247,6 +298,27 @@ test('SilentProbeState sanitizes and filters only exact probe identities', async
   assert.deepEqual(await attempt.completion, { status: 'captured' });
   assert.equal(state.start().started, false);
   assert.equal(state.sanitizeAssistant(probeAssistant), undefined);
+});
+
+test('SilentProbeState sanitizes Pi 0.84 setup aborts only for recorded probe assistants', () => {
+  const state = new SilentProbeState();
+  state.start(1_000);
+  state.observeInput('extension', '');
+  state.beginRun('');
+  const setupAbort = {
+    role: 'assistant', content: [], api: 'test', provider: 'test', model: 'test',
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    stopReason: 'error', errorMessage: 'This operation was aborted', timestamp: 20,
+  } satisfies ContextEvent['messages'][number];
+  assert.equal(state.sanitizeAssistant(setupAbort), undefined);
+  state.recordMessage(setupAbort);
+  const sanitized = state.sanitizeAssistant(setupAbort);
+  assert.equal(sanitized?.role === 'assistant' ? sanitized.stopReason : undefined, 'stop');
+
+  const unrelated = { ...setupAbort, errorMessage: 'provider failed', timestamp: 21 } satisfies ContextEvent['messages'][number];
+  state.recordMessage(unrelated);
+  assert.equal(state.sanitizeAssistant(unrelated), undefined);
+  state.fail('cleanup');
 });
 
 test('SilentProbeState filters restored identities without consuming the probe attempt', () => {
