@@ -1,5 +1,11 @@
 # @0xkahi/pi-qol
 
+## 1.0.5
+
+### Patch Changes
+
+- 1810591: improve context-view based on dimk90/pi-context-view v0.4.3 fork
+
 ## 1.0.4
 
 ### Patch Changes
