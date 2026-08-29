@@ -1,83 +1,23 @@
-# context-view Specification
+## ADDED Requirements
 
-## Purpose
+### Requirement: Accurate and sectioned tool contribution measurement
+The system SHALL count each rendered tool prompt contribution at most once, SHALL preserve Pi-native ownership when a built-in and extension tool declare the same rendered guideline, and SHALL expose labeled prompt-snippet, guideline, and definition sections with token estimates that sum to the measured tool total when those sections are present.
 
+#### Scenario: Several tools share one guideline
+- **WHEN** multiple active tools declare guideline text that Pi renders once in the system prompt
+- **THEN** Context View attributes that rendered text to at most one tool in active-tool order
+- **AND THEN** the shared text contributes tokens to the context total only once
 
-Provide an optional interactive interface for understanding model-context occupancy and hidden context contributions without adding persistent content to the model context.
+#### Scenario: Extension tool repeats a Pi-owned guideline
+- **WHEN** an extension tool declares a guideline already rendered for Pi or a built-in tool
+- **THEN** Context View does not attribute the Pi-owned rendered line to the extension tool
 
+#### Scenario: Sectioned tool content is previewed
+- **WHEN** a measured tool contribution contains a prompt snippet, guideline text, or definition
+- **THEN** its available sections are labeled in Usage and Injections previews
+- **AND THEN** the section token estimates sum exactly to the tool contribution's token estimate
 
-## Requirements
-
-### Requirement: Context View feature configuration
-The system SHALL expose `context_view.enabled` and `context_view.layout` configuration settings. `enabled` SHALL default to `false`, `layout` SHALL accept `inline` or `overlay` and default to `inline`, and the system SHALL avoid Context View capture, probe, command, and event-driven UI activity while the feature is disabled.
-
-#### Scenario: Feature is omitted from configuration
-- **WHEN** pi-qol loads configuration without a `context_view` section
-- **THEN** Context View is disabled by default
-- **AND THEN** its layout defaults to `inline`
-
-#### Scenario: Feature is enabled
-- **WHEN** pi-qol loads configuration with `context_view.enabled` set to `true`
-- **THEN** Context View lifecycle capture and invocation entry points are activated
-
-#### Scenario: Overlay layout is configured
-- **WHEN** pi-qol loads configuration with `context_view.layout` set to `overlay`
-- **THEN** Context View uses overlay presentation when opened
-
-#### Scenario: Invalid layout is configured
-- **WHEN** `context_view.layout` is neither `inline` nor `overlay`
-- **THEN** configuration validation rejects the value
-
-### Requirement: Unified Context View command
-The system SHALL provide an argument-free `/context-view` command that opens the interactive Context View in TUI mode and SHALL reject non-empty command arguments rather than treating them as separate views.
-
-#### Scenario: Command opens Context View
-- **WHEN** an enabled user invokes `/context-view` without arguments in TUI mode
-- **THEN** the system opens one Context View interface with Usage selected initially
-
-#### Scenario: Command receives arguments
-- **WHEN** a user invokes `/context-view` with any non-whitespace argument
-- **THEN** the system reports that `/context-view` accepts no arguments and does not open the interface
-
-#### Scenario: Command is invoked outside TUI mode
-- **WHEN** a user invokes `/context-view` where fullscreen custom TUI components are unavailable
-- **THEN** the system reports that the command requires TUI mode and does not attempt to render the interface
-
-### Requirement: Vim event activation
-The system SHALL listen for `pi.vimKeys.event:pi-qol.context_view` and, when enabled with a current session context, SHALL invoke the same Context View opening behavior used by `/context-view`.
-
-#### Scenario: Vim event opens Context View
-- **WHEN** the event `pi.vimKeys.event:pi-qol.context_view` is emitted during an enabled interactive session
-- **THEN** the system opens Context View with Usage selected initially
-
-#### Scenario: Vim event has no eligible context
-- **WHEN** the event is emitted before a session context is available or while Context View is disabled
-- **THEN** the system performs no Context View action
-
-### Requirement: Tabbed context inspection
-The Context View interface SHALL open using its configured inline or overlay layout, SHALL occupy at most half the TUI height in either layout, SHALL visibly contain Usage and Injections tabs, SHALL default to Usage on every new opening, and SHALL cycle tabs with `Tab` and `Shift+Tab` in forward and reverse order respectively. Inline presentation SHALL render in the normal custom-UI flow, while overlay presentation SHALL render in a centered bordered overlay.
-
-#### Scenario: Default inline presentation
-- **WHEN** Context View opens without an explicit layout configuration or with layout set to `inline`
-- **THEN** it renders inline in the normal custom-UI flow
-- **AND THEN** it remains bounded to at most half the TUI height
-
-#### Scenario: Overlay presentation
-- **WHEN** Context View opens with layout set to `overlay`
-- **THEN** it renders in a centered bordered overlay
-- **AND THEN** it remains bounded to at most half the TUI height
-
-#### Scenario: Forward tab cycling
-- **WHEN** the user presses `Tab` in either tab or its preview
-- **THEN** the other tab becomes active
-
-#### Scenario: Reverse tab cycling
-- **WHEN** the user presses `Shift+Tab` in either tab or its preview
-- **THEN** the other tab becomes active
-
-#### Scenario: Tab state is retained
-- **WHEN** a user changes tab after navigating, zooming, scrolling, or opening a preview and later returns to that tab
-- **THEN** that tab restores the state it held before the switch
+## MODIFIED Requirements
 
 ### Requirement: Vim-friendly view navigation
 Each tab and preview SHALL support `j` and `k` plus Down and Up for single-step movement, `Ctrl+d` and `Ctrl+u` for page movement, `gg` and `G` for movement to the start and end, Enter to open an available preview or truncated block content, and Esc or `q` to return or close as appropriate. In a chronological Usage preview, single-step movement SHALL navigate by captured-entry block except while revealing an excerpt taller than the viewport. PageUp, PageDown, Home, and End SHALL NOT provide the replaced page or boundary navigation behavior.
@@ -119,23 +59,6 @@ Each tab and preview SHALL support `j` and `k` plus Down and Up for single-step 
 #### Scenario: Replaced navigation keys
 - **WHEN** the user presses PageUp, PageDown, Home, or End
 - **THEN** Context View does not use those keys for page or boundary navigation
-
-### Requirement: Accurate and sectioned tool contribution measurement
-The system SHALL count each rendered tool prompt contribution at most once, SHALL preserve Pi-native ownership when a built-in and extension tool declare the same rendered guideline, and SHALL expose labeled prompt-snippet, guideline, and definition sections with token estimates that sum to the measured tool total when those sections are present.
-
-#### Scenario: Several tools share one guideline
-- **WHEN** multiple active tools declare guideline text that Pi renders once in the system prompt
-- **THEN** Context View attributes that rendered text to at most one tool in active-tool order
-- **AND THEN** the shared text contributes tokens to the context total only once
-
-#### Scenario: Extension tool repeats a Pi-owned guideline
-- **WHEN** an extension tool declares a guideline already rendered for Pi or a built-in tool
-- **THEN** Context View does not attribute the Pi-owned rendered line to the extension tool
-
-#### Scenario: Sectioned tool content is previewed
-- **WHEN** a measured tool contribution contains a prompt snippet, guideline text, or definition
-- **THEN** its available sections are labeled in Usage and Injections previews
-- **AND THEN** the section token estimates sum exactly to the tool contribution's token estimate
 
 ### Requirement: Context usage presentation
 The Usage tab SHALL present an estimated next-request context composition grouped into meaningful categories, available provider-reported context usage, Pi's effective auto-compaction reserve when enabled and readable, a proportional occupied/buffer/free-space map when sufficient data and width exist, the token size and map share represented by a cell, selectable category details, block-aware chronological content previews, expandable complete content for truncated blocks, and the existing Usage zoom behavior.
@@ -218,21 +141,3 @@ The system SHALL passively freeze the first eligible provider-context snapshot f
 - **WHEN** passive capture has not occurred and the silent probe cannot start, times out, or fails
 - **THEN** Context View remains usable with Pi-native prompt and tool data
 - **AND THEN** the interface identifies that extension additions were not fully observed
-
-### Requirement: Context inspection remains context-neutral
-The system MUST NOT persist captured prompt or message content for Context View and MUST NOT add Context View instructions or durable messages to the model context. It MAY persist only the minimal role-and-timestamp identities required to filter synthetic probe messages across session reload, resume, or fork operations.
-
-#### Scenario: Captured content is handled
-- **WHEN** Context View captures prompt, tool, skill, context-file, or message content
-- **THEN** that content remains process-local and is not written to session metadata by Context View
-
-#### Scenario: Probe identities are restored
-- **WHEN** a session containing persisted synthetic probe identities is resumed, reloaded, or forked
-- **THEN** the system restores only those identities and continues excluding the matching synthetic messages
-
-### Requirement: Upstream attribution
-The user documentation SHALL credit Dmitry Makarov as the creator of the original `pi-context-view` plugin, link to the upstream project, and describe pi-qol Context View as a fork with a unified tabbed interface and Vim-friendly keybindings.
-
-#### Scenario: User reads Context View documentation
-- **WHEN** a user reads the pi-qol README section for Context View
-- **THEN** the upstream creator, project relationship, and principal interaction changes are clearly identified

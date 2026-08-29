@@ -46,8 +46,12 @@ test('analyzeSystemPrompt emits stable semantic ids and content-only measurement
   const systemPrompt =
     [
       'BASE PROMPT',
+      'Available tools:',
       '- search: Search the web',
+      '',
+      'Guidelines:',
       '- Cite sources',
+      '',
       contextBlock,
       skillsBlock,
       append,
@@ -132,6 +136,46 @@ test('analyzeSystemPrompt emits stable semantic ids and content-only measurement
   const childTokens = builtin?.children?.reduce((sum, child) => sum + child.tokens, 0) ?? 0;
   assert.ok(childTokens > 0);
   assert.equal(builtin?.tokens, childTokens);
+});
+
+test('analyzeSystemPrompt builds reconciling tool sections and assigns shared guidelines once', () => {
+  const shared = 'Cite sources';
+  const systemPrompt = buildSystemPrompt({
+    cwd: CWD,
+    selectedTools: ['search', 'fetch'],
+    toolSnippets: { search: 'Search the web', fetch: 'Fetch a URL' },
+    promptGuidelines: [shared, shared],
+  });
+  const tools: ToolSlice[] = [
+    { name: 'search', description: 'Search', parametersJson: '{}', snippet: 'Search the web', guidelines: [shared], source: 'npm:web' },
+    { name: 'fetch', description: 'Fetch', parametersJson: '{}', snippet: 'Fetch a URL', guidelines: [shared], source: 'npm:web' },
+  ];
+
+  const items = analyzeSystemPrompt(systemPrompt, { cwd: CWD }, tools);
+  const search = items.find(entry => entry.id === 'tool:npm:web:search');
+  const fetch = items.find(entry => entry.id === 'tool:npm:web:fetch');
+  assert.deepEqual(search?.sections?.map(section => section.label), ['Prompt Snippet', 'Guidelines', 'Definition']);
+  assert.deepEqual(fetch?.sections?.map(section => section.label), ['Prompt Snippet', 'Definition']);
+  assert.equal(search?.sections?.map(section => section.text).join(''), search?.text);
+  assert.equal(search?.sections?.reduce((sum, section) => sum + section.tokens, 0), search?.tokens);
+  assert.equal(items.filter(entry => entry.text.includes(shared)).length, 1);
+});
+
+test('analyzeSystemPrompt keeps Pi-owned shell guidance out of extension tools', () => {
+  const piGuideline = 'Use bash for file operations like ls, rg, find';
+  const systemPrompt = buildSystemPrompt({
+    cwd: CWD,
+    selectedTools: ['bash', 'search'],
+    toolSnippets: { bash: 'Run commands', search: 'Search' },
+    promptGuidelines: [piGuideline],
+  });
+  const items = analyzeSystemPrompt(systemPrompt, { cwd: CWD }, [
+    { name: 'bash', description: 'Run commands', parametersJson: '{}', snippet: 'Run commands', guidelines: [], source: 'builtin' },
+    { name: 'search', description: 'Search', parametersJson: '{}', snippet: 'Search', guidelines: [piGuideline], source: 'npm:web' },
+  ]);
+  const search = items.find(entry => entry.id === 'tool:npm:web:search');
+  assert.deepEqual(search?.sections?.map(section => section.label), ['Prompt Snippet', 'Definition']);
+  assert.match(items.find(entry => entry.id === 'base-prompt')?.text ?? '', new RegExp(piGuideline));
 });
 
 test('analyzeSystemPrompt does not attribute context-file lines as custom-prompt tool guidance', () => {

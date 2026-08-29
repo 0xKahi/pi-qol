@@ -1,8 +1,10 @@
+# model-select-default-reasoning Specification
+
 ## Purpose
 
 Lets users configure a global default reasoning level that is applied automatically whenever a model is selected through the model selector, without overriding pi's own behavior for models that don't support the configured level.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Default reasoning configuration
 The system SHALL accept an optional `model_select.default_reasoning` value using the existing reasoning-level enum (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`) that has no default value.

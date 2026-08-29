@@ -26,6 +26,8 @@ export interface UsageMap {
   readonly columns: number;
   readonly rows: number;
   readonly cells: readonly UsageMapCell[];
+  /** Approximate token span represented by one cell at the active scale. */
+  readonly blockTokens: number;
 }
 
 interface MapSegment {
@@ -75,7 +77,7 @@ export function buildUsageMap(
   const bufferStart = ((contextWindow - bufferTokens) / mapScale) * cellCount;
   const segments = createSegments(usage, estimatedTotal, occupiedCells);
   const cells = Array.from({ length: cellCount }, (_, index) => createCell(index, occupiedCells, bufferStart, segments));
-  return { columns: Math.floor(columns), rows: Math.floor(rows), cells };
+  return { columns: Math.floor(columns), rows: Math.floor(rows), cells, blockTokens: mapScale / cellCount };
 }
 
 /** Scale estimated category shares into the occupied map range. */

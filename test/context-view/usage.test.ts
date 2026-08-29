@@ -172,6 +172,29 @@ test('computeUsage classifies Initial components and live session messages witho
   assert.ok(!usage.categories.some(entry => entry.tokens === 99));
 });
 
+test('computeUsage carries measured tool sections into preview entries', () => {
+  const initial = snapshot();
+  const web = initial.groups[1]?.items.find(entry => entry.id === 'web_search');
+  assert.ok(web !== undefined);
+  const sectioned = {
+    ...web,
+    text: 'promptdefinition',
+    sections: [
+      { label: 'Prompt Snippet', text: 'prompt', tokens: 2 },
+      { label: 'Definition', text: 'definition', tokens: web.tokens - 2 },
+    ],
+  } satisfies InjectionItem;
+  const group = initial.groups[1];
+  assert.ok(group !== undefined);
+  const usage = computeUsage({
+    snapshot: { ...initial, groups: [initial.groups[0]!, { ...group, items: group.items.map(entry => entry === web ? sectioned : entry) }] },
+    messages: [],
+  });
+  const entry = collectPreviewEntries(category(usage.categories, 'custom-tools')).find(candidate => candidate.text === 'promptdefinition');
+  assert.deepEqual(entry?.sections, sectioned.sections);
+  assert.notStrictEqual(entry?.sections, sectioned.sections);
+});
+
 test('computeUsage includes frozen context-only messages without recounting session-backed injections', () => {
   const initial = snapshot();
   const contextOnly = {
