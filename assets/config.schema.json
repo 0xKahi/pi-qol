@@ -168,8 +168,10 @@
         },
         "display": {
           "tokens": true,
-          "cache": true
-        }
+          "cache": true,
+          "agentName": false
+        },
+        "defaultAgentName": "DEFAULT"
       },
       "type": "object",
       "properties": {
@@ -189,6 +191,10 @@
               "pattern": "^#[0-9a-fA-F]{6}$"
             },
             "modelName": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "agentName": {
               "type": "string",
               "pattern": "^#[0-9a-fA-F]{6}$"
             },
@@ -239,7 +245,8 @@
         "display": {
           "default": {
             "tokens": true,
-            "cache": true
+            "cache": true,
+            "agentName": false
           },
           "type": "object",
           "properties": {
@@ -250,8 +257,16 @@
             "cache": {
               "default": true,
               "type": "boolean"
+            },
+            "agentName": {
+              "default": false,
+              "type": "boolean"
             }
           }
+        },
+        "defaultAgentName": {
+          "default": "DEFAULT",
+          "type": "string"
         }
       }
     },
@@ -273,6 +288,18 @@
             "inline",
             "overlay"
           ]
+        }
+      }
+    },
+    "workmux": {
+      "default": {
+        "enabled": false
+      },
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "type": "boolean"
         }
       }
     }

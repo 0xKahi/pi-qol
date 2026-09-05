@@ -1,6 +1,7 @@
 import type { ObjectValues } from './types';
 
 export const EXTENSION_ID = 'pi-qol';
+export const SET_AGENT_NAME_EVENT_ID = 'pi.qol.event:set-agent-name';
 
 const SUB_EXTENSION_IDS = {
   auto_session_name: 'auto_session_name',

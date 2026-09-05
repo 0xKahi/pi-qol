@@ -137,7 +137,7 @@ describe('custom-footer token stats', () => {
           totalCost: 0.1234,
           latestCacheHitRate: 42.123,
         }),
-        display: { tokens: true, cache: true },
+        display: { tokens: true, cache: true, agentName: false },
         icons,
         contextUsage: context(50.123),
         contextWindow: 128_000,
@@ -151,7 +151,7 @@ describe('custom-footer token stats', () => {
     expect(
       buildStatsLeft({
         totals: stats({ totalInput: 1500, totalOutput: 2000, totalCacheRead: 3000, totalCacheWrite: 4000 }),
-        display: { tokens: false, cache: false },
+        display: { tokens: false, cache: false, agentName: false },
         icons,
         contextUsage: context(null, 200_000),
         contextWindow: 200_000,
@@ -165,7 +165,7 @@ describe('custom-footer token stats', () => {
     expect(
       buildStatsLeft({
         totals: stats({ totalCacheWrite: 100 }),
-        display: { tokens: true, cache: true },
+        display: { tokens: true, cache: true, agentName: false },
         icons,
         contextUsage: context(1, 1000),
         contextWindow: 1000,
@@ -179,7 +179,7 @@ describe('custom-footer token stats', () => {
     expect(
       buildStatsLeft({
         totals: stats(),
-        display: { tokens: true, cache: true },
+        display: { tokens: true, cache: true, agentName: false },
         icons,
         contextUsage: context(75),
         contextWindow: 128_000,
@@ -192,7 +192,7 @@ describe('custom-footer token stats', () => {
     expect(
       buildStatsLeft({
         totals: stats(),
-        display: { tokens: true, cache: true },
+        display: { tokens: true, cache: true, agentName: false },
         icons,
         contextUsage: context(95),
         contextWindow: 128_000,
