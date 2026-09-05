@@ -2,6 +2,7 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { TUI } from '@earendil-works/pi-tui';
 import type { ConfigLoader } from '../../config-loader';
 import type { Config } from '../../schemas/config.schema';
+import type { AgentDisplayState } from './agent-display-state';
 
 export type SupportedProvider = 'anthropic' | 'openai-codex';
 
@@ -11,7 +12,7 @@ export type CustomFooterDisplay = CustomFooterConfig['display'];
 export type CustomFooterIcons = CustomFooterConfig['icons'];
 
 export type FooterTheme = {
-  fg(color: 'dim' | 'error' | 'warning', text: string): string;
+  fg(color: 'accent' | 'dim' | 'error' | 'warning', text: string): string;
 };
 
 export type FooterDataProvider = {
@@ -27,6 +28,7 @@ export type CustomFooterComponentDeps = {
   footerData: FooterDataProvider;
   ctx: ExtensionContext;
   config: ConfigLoader;
+  agentDisplayState: AgentDisplayState;
   getThinkingLevel: () => string;
 };
 

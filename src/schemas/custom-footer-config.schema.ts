@@ -1,9 +1,15 @@
 import z from 'zod';
 import { ColorHexSchema } from './shared-config.schema';
 
+const AgentNameSchema = z
+  .string()
+  .refine(value => value.trim().length > 0, { message: 'Agent name must not be empty' })
+  .default('DEFAULT');
+
 const CustomFooterColorsSchema = z.object({
   directory: ColorHexSchema.optional(),
   modelName: ColorHexSchema.optional(),
+  agentName: ColorHexSchema.optional(),
   anthropicUsage: ColorHexSchema.optional().default('#D97706'),
   codexUsage: ColorHexSchema.optional().default('#10B981'),
 });
@@ -19,6 +25,7 @@ const CustomFooterIconsSchema = z.object({
 const CustomFooterDisplaySchema = z.object({
   tokens: z.boolean().optional().default(true),
   cache: z.boolean().optional().default(true),
+  agentName: z.boolean().optional().default(false),
 });
 
 const DEFAULT_CUSTOM_FOOTER_COLORS = CustomFooterColorsSchema.parse({});
@@ -30,6 +37,7 @@ export const CustomFooterConfigSchema = z.object({
   colors: CustomFooterColorsSchema.default(DEFAULT_CUSTOM_FOOTER_COLORS),
   icons: CustomFooterIconsSchema.default(DEFAULT_CUSTOM_FOOTER_ICONS),
   display: CustomFooterDisplaySchema.default(DEFAULT_CUSTOM_FOOTER_DISPLAY),
+  defaultAgentName: AgentNameSchema,
 });
 export type CustomFooterConfig = z.infer<typeof CustomFooterConfigSchema>;
 
@@ -41,6 +49,7 @@ export const PartialCustomFooterConfigSchema = z.object({
     .object({
       directory: ColorHexSchema.optional(),
       modelName: ColorHexSchema.optional(),
+      agentName: ColorHexSchema.optional(),
       anthropicUsage: ColorHexSchema.optional(),
       codexUsage: ColorHexSchema.optional(),
     })
@@ -58,7 +67,9 @@ export const PartialCustomFooterConfigSchema = z.object({
     .object({
       tokens: z.boolean().optional(),
       cache: z.boolean().optional(),
+      agentName: z.boolean().optional(),
     })
     .optional(),
+  defaultAgentName: AgentNameSchema.optional(),
 });
 export type PartialCustomFooterConfig = z.infer<typeof PartialCustomFooterConfigSchema>;

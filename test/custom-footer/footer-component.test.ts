@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { dye } from '@0xkahi/cli-dye';
+import { visibleWidth } from '@earendil-works/pi-tui';
+import { AgentDisplayState } from '../../src/extensions/custom-footer/agent-display-state';
 import { CustomFooterComponent } from '../../src/extensions/custom-footer/footer-component';
 import type { CustomFooterColors } from '../../src/extensions/custom-footer/types';
 
@@ -20,13 +22,33 @@ const config = {
     cacheRead: 'R ',
     cacheWrite: 'W ',
   },
-  display: { tokens: true, cache: true },
+  display: { tokens: true, cache: true, agentName: false },
+  defaultAgentName: 'DEFAULT',
 };
 
-function createComponent(colors: CustomFooterColors = config.colors): CustomFooterComponent {
+type ComponentOptions = {
+  colors?: CustomFooterColors;
+  agentName?: boolean;
+  defaultAgentName?: string;
+  event?: unknown;
+};
+
+function createComponent(options: ComponentOptions = {}): CustomFooterComponent {
+  const agentDisplayState = new AgentDisplayState(options.defaultAgentName ?? config.defaultAgentName);
+  if (options.event !== undefined) agentDisplayState.update(options.event);
+  const resolvedConfig = {
+    ...config,
+    colors: options.colors ?? config.colors,
+    display: { ...config.display, agentName: options.agentName ?? false },
+    defaultAgentName: options.defaultAgentName ?? config.defaultAgentName,
+  };
+
   return new CustomFooterComponent({
     tui: { requestRender: () => {} },
-    theme: { fg: (_color: 'dim' | 'error' | 'warning', text: string) => text },
+    theme: {
+      fg: (color: 'accent' | 'dim' | 'error' | 'warning', text: string) =>
+        color === 'accent' ? `\x1b[36m${text}\x1b[39m` : text,
+    },
     footerData: {
       getGitBranch: () => 'main',
       getExtensionStatuses: () => new Map(),
@@ -46,10 +68,19 @@ function createComponent(colors: CustomFooterColors = config.colors): CustomFoot
     },
     config: {
       isEnabled: () => true,
-      getCustomFooter: () => ({ ...config, colors }),
+      getCustomFooter: () => resolvedConfig,
     },
+    agentDisplayState,
     getThinkingLevel: () => 'off',
   } as never);
+}
+
+function withoutOptionalColors(agentName?: string): CustomFooterColors {
+  return {
+    agentName,
+    anthropicUsage: '#D97706',
+    codexUsage: '#10B981',
+  };
 }
 
 describe('CustomFooterComponent styling', () => {
@@ -76,15 +107,56 @@ describe('CustomFooterComponent styling', () => {
     expect(`${pathLine}${statsLine}`).not.toContain('\x1b');
   });
 
-  test('uses the existing theme fallback when optional colors are absent', () => {
-    const component = createComponent({
-      anthropicUsage: '#D97706',
-      codexUsage: '#10B981',
-    });
-
-    const [pathLine, statsLine] = component.render(200);
+  test('keeps the existing path line unchanged when the badge is disabled', () => {
+    const [pathLine, statsLine] = createComponent({ colors: withoutOptionalColors() }).render(200);
 
     expect(pathLine).toBe('DIR demo (main) • session-name');
     expect(statsLine).toContain('model-id');
+  });
+
+  test('renders the default name as a padded bold inverse badge without brackets', () => {
+    dye.setEnabled(true);
+    const [pathLine] = createComponent({ agentName: true, colors: withoutOptionalColors('#123456') }).render(200);
+
+    expect(pathLine).toContain('\x1b[38;2;18;52;86m');
+    expect(pathLine).toContain('\x1b[1m');
+    expect(pathLine).toContain('\x1b[7m');
+    expect(dye.strip(pathLine!)).toBe(' DEFAULT  DIR demo (main) • session-name');
+    expect(dye.strip(pathLine!)).not.toContain('[DEFAULT]');
+  });
+
+  test('prefers the event color over config and falls back to theme accent', () => {
+    dye.setEnabled(true);
+    const [eventLine] = createComponent({
+      agentName: true,
+      colors: withoutOptionalColors('#123456'),
+      event: { agentName: 'Builder', color: '#ABCDEF' },
+    }).render(200);
+    const [accentLine] = createComponent({ agentName: true, colors: withoutOptionalColors() }).render(200);
+
+    expect(eventLine).toContain('\x1b[38;2;171;205;239m');
+    expect(eventLine).not.toContain('\x1b[38;2;18;52;86m');
+    expect(accentLine).toContain('\x1b[36m');
+    expect(accentLine).toContain('\x1b[1m');
+    expect(accentLine).toContain('\x1b[7m');
+  });
+
+  test('renders sanitized and terminal-width-truncated event names', () => {
+    dye.setEnabled(false);
+    const [longLine] = createComponent({ agentName: true, event: { agentName: '\x1b[31mVERY-LONG-AGENT-NAME\x1b[0m' } }).render(
+      200,
+    );
+    const [wideLine] = createComponent({ agentName: true, event: { agentName: '  界界界界界界\n' } }).render(200);
+
+    expect(dye.strip(longLine!)).toBe(' VERY-LONG-...  DIR demo (main) • session-name');
+    expect(dye.strip(wideLine!)).toBe(' 界界界界界...  DIR demo (main) • session-name');
+  });
+
+  test('preserves the leftmost badge during whole-line truncation', () => {
+    dye.setEnabled(false);
+    const [pathLine] = createComponent({ agentName: true }).render(12);
+
+    expect(dye.strip(pathLine!)).toBe(' DEFAULT ...');
+    expect(visibleWidth(pathLine!)).toBe(12);
   });
 });

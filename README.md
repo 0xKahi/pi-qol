@@ -54,8 +54,9 @@ shows the current directory as an icon plus basename, supports hex color overrid
 can hide token/cache clusters, and adds an OAuth subscription-usage progress bar
 for supported providers (Anthropic and OpenAI Codex).
 
-- **Directory line** — directory icon + basename, with optional git branch and
-  session name.
+- **Directory line** — optional inverse-styled agent badge followed by the
+  directory icon + basename, with optional git branch and session name. The badge
+  is disabled by default.
 - **Stats line** — cumulative input/output tokens, cache read/write/hit cluster,
   session cost (or `(sub)` when on a subscription), context-window usage, and the
   right-aligned model name (with provider prefix when multiple providers are
@@ -117,12 +118,15 @@ them (project overrides global):
     "enabled": true,
     "colors": {
       "directory": "#A78BFA",
-      "modelName": "#60A5FA"
+      "modelName": "#60A5FA",
+      "agentName": "#FBBF24"
     },
     "display": {
       "tokens": true,
-      "cache": true
-    }
+      "cache": true,
+      "agentName": true
+    },
+    "defaultAgentName": "DEFAULT"
   }
 }
 ```
@@ -188,8 +192,11 @@ Context View is a fork of Dmitry Makarov's [pi-context-view](https://github.com/
 | `enabled`                   | `boolean` | `false`   | Replace pi's built-in interactive footer.        |
 | `display.tokens`            | `boolean` | `true`    | Show cumulative input/output token counts.       |
 | `display.cache`             | `boolean` | `true`    | Show the custom cache read/write/hit cluster.    |
+| `display.agentName`         | `boolean` | `false`   | Prefix the first line with a padded bold inverse agent badge. |
+| `defaultAgentName`          | `string`  | `DEFAULT` | Agent name restored at the start of each session. |
 | `colors.directory`          | `hex`     | —         | Color the directory icon and basename.           |
 | `colors.modelName`          | `hex`     | —         | Color the right-aligned model name.              |
+| `colors.agentName`          | `hex`     | —         | Agent badge foreground color before inversion.   |
 | `colors.anthropicUsage`     | `hex`     | `#D97706` | Color the Claude subscription usage segment (bar + percentage). |
 | `colors.codexUsage`         | `hex`     | `#10B981` | Color the Codex subscription usage segment (bar + percentage).  |
 | `icons.directory`           | `string`  | nerd font | Glyph shown before the directory basename.       |
@@ -197,6 +204,29 @@ Context View is a fork of Dmitry Makarov's [pi-context-view](https://github.com/
 | `icons.cacheRead`           | `string`  | nerd font | Glyph for cache-read tokens.                     |
 | `icons.cacheWrite`          | `string`  | nerd font | Glyph for cache-write tokens.                    |
 | `icons.refresh`             | `string`  | nerd font | Glyph shown before the subscription reset time.  |
+
+When enabled, the badge has no brackets, uses bold and inverse styling, and adds
+one styled padding space on each side of the name. One normal, unstyled space
+separates the trailing badge padding from the directory. Names are trimmed and
+sanitized. Names wider than ten terminal columns are rendered as their first ten
+visible columns plus `...`; badge padding does not count toward that limit, and
+wide Unicode characters are never split. Badge color precedence is a valid event
+color,
+`colors.agentName`, then pi's `accent` theme color. Event-selected names and
+colors are session-scoped: every `session_start` restores `defaultAgentName` and
+clears the event color.
+
+Other extensions can update the current identity through pi's event bus:
+
+```ts
+pi.events.emit('pi.qol.event:set-agent-name', {
+  agentName: 'Reviewer',
+  color: '#FFFFFF', // optional; must be #RRGGBB
+});
+```
+
+Invalid or empty names are ignored. A missing or invalid event color clears any
+previous event color and uses the normal fallback precedence.
 
 Project config shallow-merges each top-level section over global config. Arrays
 replace lower-precedence arrays, so project `model_select.favourite` or

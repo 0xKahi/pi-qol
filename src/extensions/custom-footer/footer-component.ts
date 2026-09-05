@@ -18,6 +18,7 @@ function sanitizeStatusText(text: string): string {
 export class CustomFooterComponent implements Component {
   private readonly usageManager: SubscriptionUsageManager;
   private readonly unsubscribeBranch: () => void;
+  private readonly unsubscribeAgentDisplay: () => void;
   private restoredDefaultFooter = false;
   private disposed = false;
 
@@ -26,6 +27,9 @@ export class CustomFooterComponent implements Component {
       if (!this.disposed) deps.tui.requestRender();
     });
     this.unsubscribeBranch = deps.footerData.onBranchChange(() => deps.tui.requestRender());
+    this.unsubscribeAgentDisplay = deps.agentDisplayState.onChange(() => {
+      if (!this.disposed) deps.tui.requestRender();
+    });
   }
 
   invalidate(): void {
@@ -35,6 +39,7 @@ export class CustomFooterComponent implements Component {
   dispose(): void {
     this.disposed = true;
     this.unsubscribeBranch();
+    this.unsubscribeAgentDisplay();
   }
 
   render(width: number): string[] {
@@ -84,7 +89,24 @@ export class CustomFooterComponent implements Component {
       line = this.deps.theme.fg('dim', rawLine);
     }
 
+    if (config.display.agentName) {
+      line = `${this.renderAgentBadge(config)} ${line}`;
+    }
+
     return truncateToWidth(line, width, this.deps.theme.fg('dim', '...'));
+  }
+
+  private renderAgentBadge(config: CustomFooterConfig): string {
+    const agentDisplay = this.deps.agentDisplayState.snapshot();
+    const badgeText = ` ${agentDisplay.name} `;
+    const color = agentDisplay.eventColor ?? config.colors.agentName;
+    if (color) {
+      return dye
+        .colorize({ fg: dye.hex(color) })
+        .bold()
+        .inverse(badgeText);
+    }
+    return dye.inverse(dye.bold(this.deps.theme.fg('accent', badgeText)));
   }
 
   private renderStatsLine(width: number, config: CustomFooterConfig): string {
