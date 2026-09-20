@@ -25,10 +25,11 @@ function item(id: string, kind: InjectionItem['kind'], tokens: number, native = 
 function snapshot(): InitialSnapshot {
   const builtins = [item('read', 'tool', 3), item('bash', 'tool', 5)];
   const skills = [item('code-style', 'skills', 2), item('typescript-code', 'skills', 4)];
+  const contextFiles = [item('agents', 'context-file', 2), item('global-agents', 'context-file', 4)];
   const piItems = [
     item('base', 'base-prompt', 10),
     item('builtins', 'tool', 8, true, builtins),
-    item('agents', 'context-file', 6),
+    item('context-files', 'context-file', 6, true, contextFiles),
     item('skills', 'skills', 6, true, skills),
   ];
   const mcpTool: InjectionItem = {
@@ -85,28 +86,9 @@ function assistantMessage(): ContextEvent['messages'][number] {
   };
 }
 
-/** Find one category recursively by stable id. */
-function category(categories: readonly UsageCategory[], id: string): UsageCategory {
-  for (const entry of categories) {
-    if (entry.id === id) return entry;
-    const nested = findCategory(entry.children ?? [], id);
-    if (nested !== undefined) return nested;
-  }
-  assert.fail(`missing category: ${id}`);
-}
-
-/** Recursive worker for category(). */
-function findCategory(categories: readonly UsageCategory[], id: string): UsageCategory | undefined {
-  for (const entry of categories) {
-    if (entry.id === id) return entry;
-    const nested = findCategory(entry.children ?? [], id);
-    if (nested !== undefined) return nested;
-  }
-  return undefined;
-}
-
-test('computeUsage classifies Initial components and live session messages without double-counting', () => {
-  const messages: ContextEvent['messages'] = [
+/** Session fixture exercising every message-backed usage category. */
+function sessionMessages(): ContextEvent['messages'] {
+  return [
     { role: 'user', content: '12345678', timestamp: 1 },
     assistantMessage(),
     {
@@ -132,16 +114,39 @@ test('computeUsage classifies Initial components and live session messages witho
     { role: 'compactionSummary', summary: 'abcdefgh', tokensBefore: 1_000, timestamp: 7 },
     { role: 'branchSummary', summary: 'abcd', fromId: 'old', timestamp: 8 },
   ];
+}
 
+/** Find one category recursively by stable id. */
+function category(categories: readonly UsageCategory[], id: string): UsageCategory {
+  for (const entry of categories) {
+    if (entry.id === id) return entry;
+    const nested = findCategory(entry.children ?? [], id);
+    if (nested !== undefined) return nested;
+  }
+  assert.fail(`missing category: ${id}`);
+}
+
+/** Recursive worker for category(). */
+function findCategory(categories: readonly UsageCategory[], id: string): UsageCategory | undefined {
+  for (const entry of categories) {
+    if (entry.id === id) return entry;
+    const nested = findCategory(entry.children ?? [], id);
+    if (nested !== undefined) return nested;
+  }
+  return undefined;
+}
+
+test('computeUsage classifies Initial components and live session messages without double-counting', () => {
   const usage = computeUsage({
     snapshot: snapshot(),
-    messages,
+    messages: sessionMessages(),
     reported: { tokens: 100, contextWindow: 1_000, percent: 10 },
     modelLabel: 'test-model',
     computedAt: new Date('2026-07-11T13:00:00Z'),
   });
 
-  assert.equal(category(usage.categories, 'system-prompt').tokens, 19);
+  // The prompt addition belongs to the extension that appended it, not to pi's prompt.
+  assert.equal(category(usage.categories, 'system-prompt').tokens, 10);
   assert.deepEqual(
     category(usage.categories, 'system-tools').children?.map(entry => entry.id),
     ['item:bash', 'item:read'],
@@ -149,6 +154,10 @@ test('computeUsage classifies Initial components and live session messages witho
   assert.equal(category(usage.categories, 'system-tools').tokens, 8);
   assert.equal(category(usage.categories, 'custom-tools').tokens, 7);
   assert.equal(category(usage.categories, 'mcp-tools').tokens, 5);
+  assert.deepEqual(
+    category(usage.categories, 'context-files').children?.map(entry => entry.id),
+    ['item:global-agents', 'item:agents'],
+  );
   assert.equal(category(usage.categories, 'context-files').tokens, 6);
   assert.equal(category(usage.categories, 'skills').tokens, 6);
   assert.equal(findCategory(usage.categories, 'messages'), undefined);
@@ -159,7 +168,14 @@ test('computeUsage classifies Initial components and live session messages witho
   assert.equal(category(usage.categories, 'tool-output').tokens, 8);
   assert.equal(category(usage.categories, 'tool-result:read').tokens, 2);
   assert.equal(findCategory(usage.categories, 'tool-results'), undefined);
-  assert.equal(category(usage.categories, 'extension-messages').tokens, 1);
+  assert.equal(category(usage.categories, 'extension-messages').tokens, 10);
+  assert.deepEqual(
+    category(usage.categories, 'extension-messages').children?.map(entry => [entry.label, entry.tokens]),
+    [
+      ['npm:test', 9],
+      ['marker', 1],
+    ],
+  );
   // Bash and summary estimates cover pi's LLM-transform text, not just command/output/summary.
   assert.equal(category(usage.categories, 'bash-executions').tokens, 6);
   assert.equal(category(usage.categories, 'compacted-data').tokens, 55);
@@ -172,59 +188,143 @@ test('computeUsage classifies Initial components and live session messages witho
   assert.ok(!usage.categories.some(entry => entry.tokens === 99));
 });
 
-test('computeUsage carries measured tool sections into preview entries', () => {
-  const initial = snapshot();
-  const web = initial.groups[1]?.items.find(entry => entry.id === 'web_search');
-  assert.ok(web !== undefined);
-  const sectioned = {
-    ...web,
-    text: 'promptdefinition',
-    sections: [
-      { label: 'Prompt Snippet', text: 'prompt', tokens: 2 },
-      { label: 'Definition', text: 'definition', tokens: web.tokens - 2 },
+test('computeUsage keeps pi-qol category order, ids, and labels', () => {
+  const usage = computeUsage({ snapshot: snapshot(), messages: [] });
+
+  assert.deepEqual(
+    usage.categories.map(entry => [entry.id, entry.label]),
+    [
+      ['system-prompt', 'System Prompt'],
+      ['system-tools', 'System Tools'],
+      ['custom-tools', 'Custom Tools'],
+      ['mcp-tools', 'MCP Tools'],
+      ['context-files', 'Memory (AGENTS.md)'],
+      ['skills', 'Skills'],
+      ['extension-messages', 'Extensions'],
     ],
-  } satisfies InjectionItem;
-  const group = initial.groups[1];
-  assert.ok(group !== undefined);
-  const usage = computeUsage({
-    snapshot: { ...initial, groups: [initial.groups[0]!, { ...group, items: group.items.map(entry => entry === web ? sectioned : entry) }] },
-    messages: [],
-  });
-  const entry = collectPreviewEntries(category(usage.categories, 'custom-tools')).find(candidate => candidate.text === 'promptdefinition');
-  assert.deepEqual(entry?.sections, sectioned.sections);
-  assert.notStrictEqual(entry?.sections, sectioned.sections);
+  );
 });
 
-test('computeUsage includes frozen context-only messages without recounting session-backed injections', () => {
+test('computeUsage includes frozen request-only messages without recounting session-backed injections', () => {
   const initial = snapshot();
-  const contextOnly = {
-    ...item('context-user', 'message', 8, false),
-    source: { id: 'aggregate:extensions', label: 'extensions (aggregate)', native: false },
+  const requestOnly = {
+    ...item('request-user', 'message', 8, false),
+    source: { id: 'aggregate:extensions', label: 'unattributed', native: false },
     label: 'user message',
-    text: 'context-only content',
-    contextOnly: true,
+    text: 'request-only content',
+    requestOnly: true,
   } satisfies InjectionItem;
-  const contextGroup = {
-    source: contextOnly.source,
-    items: [contextOnly],
-    totalTokens: contextOnly.tokens,
+  const requestGroup = {
+    source: requestOnly.source,
+    items: [requestOnly],
+    totalTokens: requestOnly.tokens,
   };
   const usage = computeUsage({
     snapshot: {
       ...initial,
-      groups: [...initial.groups, contextGroup],
-      totalTokens: initial.totalTokens + contextOnly.tokens,
+      groups: [...initial.groups, requestGroup],
+      totalTokens: initial.totalTokens + requestOnly.tokens,
     },
     messages: [],
   });
 
   const extensions = category(usage.categories, 'extension-messages');
-  assert.equal(extensions.tokens, 8);
+  assert.equal(extensions.tokens, 17);
   assert.deepEqual(
     extensions.children?.map(entry => entry.label),
-    ['extensions (aggregate)'],
+    ['npm:test', 'unattributed'],
   );
-  assert.equal(collectPreviewEntries(extensions)[0]?.text, 'context-only content');
+  assert.ok(collectPreviewEntries(extensions).some(entry => entry.text === 'request-only content'));
+});
+
+test('computeUsage carries measured tool parts into tool preview entries', () => {
+  const snippet = '\n- web_search: Search the web';
+  const definition = 'web_search: Search\n{}';
+  const customTool: InjectionItem = {
+    ...item('web_search', 'tool', 12, false),
+    text: `${snippet}${definition}`,
+    sections: [
+      { label: 'Available Tools', text: snippet, tokens: 7 },
+      { label: 'Definition', text: definition, tokens: 5 },
+    ],
+  };
+  const builtinChild: InjectionItem = {
+    ...item('read', 'tool', 3),
+    text: definition,
+    sections: [{ label: 'Definition', text: definition, tokens: 3 }],
+  };
+  const piItems = [item('base', 'base-prompt', 10), item('builtins', 'tool', 3, true, [builtinChild])];
+  const usage = computeUsage({
+    snapshot: {
+      origin: 'real-turn',
+      capturedAt: new Date('2026-07-11T12:00:00Z'),
+      groups: [
+        { source: { id: 'pi', label: 'pi', native: true }, items: piItems, totalTokens: 13 },
+        {
+          source: { id: 'npm:test', label: 'npm:test', native: false },
+          items: [customTool],
+          totalTokens: customTool.tokens,
+        },
+      ],
+      totalTokens: 25,
+    },
+    messages: [],
+  });
+
+  const customEntry = collectPreviewEntries(category(usage.categories, 'custom-tools'))[0];
+  assert.deepEqual(
+    customEntry?.sections?.map(section => section.label),
+    ['Available Tools', 'Definition'],
+  );
+  // Parts break the entry down; they never add tokens to it.
+  assert.equal(
+    customEntry?.sections?.reduce((sum, section) => sum + section.tokens, 0),
+    customEntry?.tokens,
+  );
+  assert.equal(customEntry?.sections?.map(section => section.text).join(''), customEntry?.text);
+
+  const builtinEntry = collectPreviewEntries(category(usage.categories, 'item:read'))[0];
+  assert.deepEqual(
+    builtinEntry?.sections?.map(section => section.label),
+    ['Definition'],
+  );
+  const promptEntry = collectPreviewEntries(category(usage.categories, 'system-prompt'))[0];
+  assert.equal(promptEntry?.sections, undefined);
+});
+
+test('computeUsage keeps System Prompt parts as sections of one entry, not separate blocks', () => {
+  const preamble = 'You are an expert coding assistant.';
+  const guidelines = '\nGuidelines:\n- Be concise';
+  const basePrompt: InjectionItem = {
+    ...item('base', 'base-prompt', 13),
+    text: `${preamble}${guidelines}`,
+    sections: [
+      { label: 'Preamble', text: preamble, tokens: 9 },
+      { label: 'Guidelines', text: guidelines, tokens: 4 },
+    ],
+    children: [
+      { ...item('base-prompt:preamble', 'base-prompt', 9), label: 'Preamble', text: preamble },
+      { ...item('base-prompt:guidelines', 'base-prompt', 4), label: 'Guidelines', text: guidelines },
+    ],
+  };
+  const usage = computeUsage({
+    snapshot: {
+      origin: 'real-turn',
+      capturedAt: new Date('2026-07-11T12:00:00Z'),
+      groups: [{ source: { id: 'pi', label: 'pi', native: true }, items: [basePrompt], totalTokens: 13 }],
+      totalTokens: 13,
+    },
+    messages: [],
+  });
+
+  // Prompt parts break one preview block down; they never become blocks of their own.
+  const entries = collectPreviewEntries(category(usage.categories, 'system-prompt'));
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0]?.tokens, 13);
+  assert.deepEqual(
+    entries[0]?.sections?.map(section => section.label),
+    ['Preamble', 'Guidelines'],
+  );
 });
 
 test('computeUsage drops empty categories and aggregates duplicate tool/custom message sources', () => {
@@ -258,7 +358,10 @@ test('computeUsage drops empty categories and aggregates duplicate tool/custom m
   );
   assert.deepEqual(
     category(usage.categories, 'extension-messages').children?.map(entry => [entry.id, entry.tokens]),
-    [['custom-message:marker', 3]],
+    [
+      ['item:addition', 9],
+      ['custom-message:marker', 3],
+    ],
   );
   assert.equal(category(usage.categories, 'tool-result:read').entries?.length, 2);
   assert.equal(findCategory(usage.categories, 'user-messages'), undefined);
@@ -341,6 +444,10 @@ test('computeUsage builds per-block preview entries with timestamps and breadcru
     ],
   );
   assert.equal(callEntries[2]?.text, 'bash({"command":"ls"})');
+  // Arguments are marked where they were serialized, between the call parentheses.
+  const argumentsSpan = callEntries[2]?.jsonSpan;
+  assert.ok(argumentsSpan !== undefined);
+  assert.equal(callEntries[2]?.text.slice(argumentsSpan.start, argumentsSpan.end), '{"command":"ls"}');
   const callCategory = category(usage.categories, 'agent-tool-call-messages');
   assert.equal(
     callCategory.tokens,
@@ -575,9 +682,9 @@ test('collectPreviewEntries flattens aggregates chronologically', () => {
   );
 
   // Timeless snapshot entries keep category order instead of sorting.
-  const systemTools = collectPreviewEntries(category(usage.categories, 'system-tools'));
+  const builtInTools = collectPreviewEntries(category(usage.categories, 'system-tools'));
   assert.deepEqual(
-    systemTools.map(entry => [...entry.breadcrumb]),
+    builtInTools.map(entry => [...entry.breadcrumb]),
     [['bash'], ['read']],
   );
 });

@@ -4,6 +4,7 @@ import { ModalDialog, type ModalFrame, VimNavigationScheme } from '../../../libs
 import type { ContextUsageSnapshot, InitialSnapshot } from '../model';
 import { InjectionsView } from './injections-view';
 import { UsageView } from './usage-view';
+import { readWheelScrollLines } from './wheel';
 
 export type ContextViewTab = 'usage' | 'injections';
 
@@ -30,8 +31,12 @@ export class ContextViewDialog implements Component, Focusable {
     done: (result: undefined) => void,
     frame: ModalFrame = 'inline',
   ) {
+    const wheelScrollLines = readWheelScrollLines(tui);
     this.dialog = new ModalDialog<undefined>(tui, theme, keybindings, {
-      tabs: [new UsageView(theme, { usage: input.usage }), new InjectionsView(theme, { snapshot: input.initial })],
+      tabs: [
+        new UsageView(theme, { usage: input.usage }, wheelScrollLines),
+        new InjectionsView(theme, { snapshot: input.initial }, wheelScrollLines),
+      ],
       navigation: new VimNavigationScheme(),
       frame,
       height: 'half',

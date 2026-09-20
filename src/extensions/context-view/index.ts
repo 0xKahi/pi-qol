@@ -1,9 +1,17 @@
 import { buildSessionContext, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { ConfigLoader } from '../../config-loader';
 import { presentModal } from '../../libs/modal';
-import { CompactionState, InitialCaptureState, PROBE_IDENTITIES_CUSTOM_TYPE, parsePersistedIdentities, SilentProbeState } from './capture';
+import {
+  CompactionState,
+  collectPromptSources,
+  InitialCaptureState,
+  PROBE_IDENTITIES_CUSTOM_TYPE,
+  parsePersistedIdentities,
+  SilentProbeState,
+} from './capture';
 import { COMMAND_NAME, PI_VIM_KEY_EVENT_ID } from './constants';
 import { prepareContextViewData } from './context-view-controller';
+import { readProbeToken } from './probe-token';
 import { ContextViewDialog } from './ui/context-view-dialog';
 
 function activateContextView(pi: ExtensionAPI, deps: { config: ConfigLoader; initialCtx: ExtensionContext }): void {
@@ -50,12 +58,18 @@ function activateContextView(pi: ExtensionAPI, deps: { config: ConfigLoader; ini
   pi.on('session_compact', () => compaction.finish());
   pi.on('session_compact_failed', () => compaction.finish());
   pi.on('input', event => {
-    if (enabled()) probe.observeInput(event.source, event.text);
+    if (!enabled()) return;
+    // Reset text earlier input transforms added to our own synthetic prompt:
+    // the probe carries no instructions, and its run is identified by token.
+    if (event.text === '' || !probe.isProbeInput(event.source, readProbeToken())) return undefined;
+    return { action: 'transform', text: '' } as const;
   });
   pi.on('before_agent_start', event => {
     if (!enabled()) return;
-    probe.beginRun(event.prompt);
-    capture.prepare(event.systemPromptOptions);
+    probe.beginRun(readProbeToken());
+    // The chained prompt here already carries additions from extensions loaded
+    // earlier; anything the context event adds came from extensions after us.
+    capture.prepare(event.systemPromptOptions, event.systemPrompt);
   });
   pi.on('turn_start', (_event, ctx) => {
     if (enabled() && probe.isCurrentRun) ctx.abort();
@@ -65,7 +79,7 @@ function activateContextView(pi: ExtensionAPI, deps: { config: ConfigLoader; ini
   });
   pi.on('message_end', event => {
     if (!enabled()) return;
-    const message = probe.sanitizeAssistant(event.message);
+    const message = probe.sanitizeMessage(event.message);
     return message === undefined ? undefined : { message };
   });
   pi.on('context', (event, ctx) => {
@@ -77,6 +91,7 @@ function activateContextView(pi: ExtensionAPI, deps: { config: ConfigLoader; ini
       baselineMessages: probe.filterMessages(buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages),
       allTools: pi.getAllTools(),
       activeToolNames: pi.getActiveTools(),
+      promptSources: collectPromptSources(pi.getAllTools(), pi.getCommands()),
       origin: probe.isCurrentRun ? 'synthetic-probe' : 'real-turn',
     }));
     return messages === event.messages ? undefined : { messages };
@@ -89,7 +104,8 @@ function activateContextView(pi: ExtensionAPI, deps: { config: ConfigLoader; ini
   });
   pi.on('session_shutdown', () => {
     compaction.finish();
-    if (!enabled()) return;
+    // Once activated, cleanup runs even if config reloaded to disabled: the
+    // probe may already have written messages this runtime must identify.
     persistProbeIdentities();
     probe.fail('Session ended before the silent probe completed.');
   });

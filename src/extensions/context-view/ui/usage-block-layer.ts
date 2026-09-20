@@ -4,6 +4,7 @@ import type { Theme } from '@earendil-works/pi-coding-agent';
 import { BODY_INDENT, calculateViewport, fitLine, type Hint, type ModalLayer, type NavigationAction, spreadLine } from '../../../libs/modal';
 import type { UsagePreviewEntry } from '../model';
 import { BlockNavigator, layoutPreviewBlocks, type PreviewLayout } from './usage-preview';
+import { parseWheelDirection } from './wheel';
 
 const MAX_EXCERPT_LINES = 20;
 const MIN_EXCERPT_LINES = 2;
@@ -14,7 +15,7 @@ export interface UsageBlockLayerOptions {
   readonly entries: readonly UsagePreviewEntry[];
   readonly entryHeader: (entry: UsagePreviewEntry) => string;
   readonly entryBody: (entry: UsagePreviewEntry, width: number) => string[];
-  readonly description?: (width: number) => string[];
+  readonly description?: (width: number, height: number | undefined) => string[];
   readonly openFullContent: (entry: UsagePreviewEntry) => void;
 }
 
@@ -39,8 +40,12 @@ export class UsageBlockLayer implements ModalLayer {
     return selected?.truncated === true ? [['Enter', 'View Content']] : [];
   }
 
-  public handleInput(_data: string): void {
-    // Navigation is supplied as semantic actions by the modal shell.
+  /** One wheel notch steps one block; navigation is supplied as semantic actions by the modal shell. */
+  public handleInput(data: string): void {
+    const wheel = parseWheelDirection(data);
+    if (wheel === undefined) return;
+    if (wheel < 0) this.navigator.stepBack();
+    else this.navigator.stepForward();
   }
 
   public handleNavigation(action: NavigationAction): void {
@@ -73,7 +78,7 @@ export class UsageBlockLayer implements ModalLayer {
   }
 
   public render(width: number, height: number | undefined): string[] {
-    const description = this.options.description?.(width) ?? [];
+    const description = this.options.description?.(width, height) ?? [];
     // Reserve one row for the overflow counter whenever the stream needs it;
     // an unused row is preferable to clipping a pinned description.
     const fixedLineCount = 3 + (description.length > 0 ? description.length + 1 : 0);

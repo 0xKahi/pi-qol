@@ -1,6 +1,21 @@
-import { buildSessionContext, type ExtensionAPI, type ExtensionContext, SettingsManager } from '@earendil-works/pi-coding-agent';
-import { buildNativeSnapshot, type CompactionState, type InitialCaptureState, mergeContextOnlyMessages, type SilentProbeState } from './capture';
+import {
+  type BuildSystemPromptOptions,
+  buildSessionContext,
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  type ExtensionContext,
+} from '@earendil-works/pi-coding-agent';
+import {
+  buildNativeSnapshot,
+  buildUsageSnapshot,
+  type CompactionState,
+  collectPromptSources,
+  type InitialCaptureState,
+  type SilentProbeState,
+} from './capture';
 import type { ContextUsageSnapshot, InitialSnapshot } from './model';
+import { runWithProbeToken } from './probe-token';
+import { readAutoCompactReserveTokens } from './settings';
 import { computeUsage, toReportedUsage } from './usage';
 
 export interface ContextViewData {
@@ -10,7 +25,7 @@ export interface ContextViewData {
 }
 
 type PromptContext = ExtensionContext & {
-  getSystemPromptOptions?: () => Parameters<typeof buildNativeSnapshot>[0]['options'];
+  getSystemPromptOptions?: () => BuildSystemPromptOptions;
   waitForIdle?: () => Promise<void>;
 };
 
@@ -19,14 +34,8 @@ interface ContextViewDependencies {
 }
 
 /** Read Pi's effective merged compaction reserve; optional settings never block the view. */
-export function readAutoCompactReserveTokens(ctx: PromptContext): number | undefined {
-  try {
-    const settings = SettingsManager.create(ctx.cwd, undefined, { projectTrusted: ctx.isProjectTrusted() });
-    if (!settings.getCompactionEnabled()) return undefined;
-    return settings.getCompactionReserveTokens();
-  } catch {
-    return undefined;
-  }
+function defaultReserveReader(ctx: PromptContext): number | undefined {
+  return readAutoCompactReserveTokens(ctx as unknown as ExtensionCommandContext);
 }
 
 /** Prepare Context View data without requiring command-only APIs for event callers. */
@@ -38,49 +47,78 @@ export async function prepareContextViewData(
   compaction: CompactionState,
   dependencies: ContextViewDependencies = {},
 ): Promise<ContextViewData> {
-  if (ctx.waitForIdle) await ctx.waitForIdle();
   let initial = capture.snapshot;
   let degradedReason: string | undefined;
+
+  // A frozen Initial never needs the agent to settle first: opening the view
+  // during a run must show the captured state immediately, unlike a probe.
+  if (!initial) {
+    if (ctx.waitForIdle) await ctx.waitForIdle();
+    initial = capture.snapshot;
+  }
 
   if (!initial) {
     if (compaction.isActive) {
       degradedReason = 'Silent probe unavailable: context compaction is in progress. Extension additions were not observed.';
+    } else if (ctx.model === undefined) {
+      degradedReason = 'Silent probe unavailable: no model is selected. Extension additions were not observed.';
+    } else if (!ctx.modelRegistry.hasConfiguredAuth(ctx.model)) {
+      degradedReason = `Silent probe unavailable: ${ctx.model.provider} has no configured authentication. Extension additions were not observed.`;
     } else {
       const attempt = probe.start();
-      if (attempt.started && ctx.model && ctx.modelRegistry.hasConfiguredAuth(ctx.model)) {
+      if (attempt.started) {
+        ctx.ui.setWorkingVisible(false);
         try {
-          pi.sendUserMessage('');
+          // Pi emits `input` and `before_agent_start` from inside this call, so the
+          // token reaches both handlers and identifies the run even when another
+          // extension's input transform rewrites the prompt text.
+          runWithProbeToken(attempt.token, () => pi.sendUserMessage(''));
         } catch (error) {
           probe.fail(error instanceof Error ? error.message : String(error));
         }
-      } else if (attempt.started) {
-        probe.fail('Silent probe unavailable: no authenticated model is selected.');
       }
-      const outcome = await attempt.completion;
-      initial = capture.snapshot;
-      if (!initial)
-        degradedReason = `${outcome.status === 'failed' ? outcome.reason : 'Silent probe did not capture Initial.'} Extension additions were not observed.`;
+      try {
+        const outcome = await attempt.completion;
+        initial = capture.snapshot;
+        if (!initial) {
+          degradedReason = `${outcome.status === 'failed' ? outcome.reason : 'Silent probe did not capture Initial.'} Extension additions were not observed.`;
+        }
+      } finally {
+        if (attempt.started) ctx.ui.setWorkingVisible(true);
+      }
     }
   }
 
-  const options = capture.promptOptions ?? ctx.getSystemPromptOptions?.();
+  const options = ctx.getSystemPromptOptions?.() ?? capture.promptOptions;
   if (!options) {
     throw new Error('Context View has not received prompt options yet. Start an agent turn and try again.');
   }
-  const current = buildNativeSnapshot({
+  const allTools = pi.getAllTools();
+  const activeToolNames = pi.getActiveTools();
+  const promptSources = collectPromptSources(allTools, pi.getCommands());
+  const native = buildNativeSnapshot({
     systemPrompt: ctx.getSystemPrompt(),
     options,
-    allTools: pi.getAllTools(),
-    activeToolNames: pi.getActiveTools(),
+    allTools,
+    activeToolNames,
+    promptSources,
   });
-  const fallback = initial ?? current;
+  const fallback = initial ?? native;
   const messages = probe.filterMessages(buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages);
-  const reserveReader = dependencies.readAutoCompactReserveTokens ?? readAutoCompactReserveTokens;
+  const reserveReader = dependencies.readAutoCompactReserveTokens ?? defaultReserveReader;
   return {
     initial: fallback,
     degradedReason,
     usage: computeUsage({
-      snapshot: mergeContextOnlyMessages(current, fallback),
+      snapshot: buildUsageSnapshot({
+        messages,
+        initial: fallback,
+        systemPrompt: ctx.getSystemPrompt(),
+        options,
+        allTools,
+        activeToolNames,
+        promptSources,
+      }),
       messages,
       reported: toReportedUsage(ctx.getContextUsage()),
       modelLabel: ctx.model?.id,

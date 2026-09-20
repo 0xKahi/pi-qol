@@ -54,3 +54,12 @@ test('UsageBlockLayer re-caps on height and width changes', () => {
   preview.handleNavigation('confirm');
   assert.equal(opened.length, 0, 'the complete resized block does not open a redundant preview');
 });
+
+test('UsageBlockLayer steps one block per wheel notch', () => {
+  const preview = layer([]);
+  assert.match(preview.render(60, 40).join('\n'), /→ \[first\]/);
+  preview.handleInput('\u001b[<65;1;1M');
+  assert.match(preview.render(60, 40).join('\n'), /→ \[second\]/);
+  preview.handleInput('\u001b[<64;1;1M');
+  assert.match(preview.render(60, 40).join('\n'), /→ \[first\]/);
+});

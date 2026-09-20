@@ -4,10 +4,17 @@ import { BlockNavigator, layoutPreviewBlocks } from '../../src/extensions/contex
 
 test('layoutPreviewBlocks separates blocks without assigning separator ownership', () => {
   assert.deepEqual(layoutPreviewBlocks([2, 3]), {
-    extents: [{ start: 0, height: 2 }, { start: 3, height: 3 }],
+    extents: [
+      { start: 0, height: 2 },
+      { start: 3, height: 3 },
+    ],
     lines: [
-      { blockIndex: 0, lineIndex: 0 }, { blockIndex: 0, lineIndex: 1 }, undefined,
-      { blockIndex: 1, lineIndex: 0 }, { blockIndex: 1, lineIndex: 1 }, { blockIndex: 1, lineIndex: 2 },
+      { blockIndex: 0, lineIndex: 0 },
+      { blockIndex: 0, lineIndex: 1 },
+      undefined,
+      { blockIndex: 1, lineIndex: 0 },
+      { blockIndex: 1, lineIndex: 1 },
+      { blockIndex: 1, lineIndex: 2 },
     ],
   });
 });
