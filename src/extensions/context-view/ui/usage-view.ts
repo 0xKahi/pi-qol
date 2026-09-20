@@ -18,18 +18,20 @@ import {
   type ModalTab,
   type ModalTabContext,
   type NavigationAction,
-  PreviewLayer,
   RenderCache,
   spreadLine,
   wrapDescriptionLines,
 } from '../../../libs/modal';
-import type { ContextUsageSnapshot, UsageCategory, UsagePreviewEntry } from '../model';
+import type { ContextUsageSnapshot, JsonSpan, UsageCategory, UsagePreviewEntry } from '../model';
 import { collectPreviewEntries } from '../usage';
 import { normalizeInlineText, normalizePreviewText } from './injections-model';
-import { previewBodyLines } from './section-preview';
+import { expandJsonSpan } from './json-preview';
+import { previewBodyLines, previewLegendLines } from './section-preview';
 import { splitSkillPreview } from './skill-preview';
 import { UsageBlockLayer } from './usage-block-layer';
 import { buildUsageMap, calculateFitMapScale, DEFAULT_MAP_COLUMNS, DEFAULT_MAP_ROWS, type UsageMapCell } from './usage-map';
+import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection } from './wheel';
+import { WheelPreviewLayer } from './wheel-preview-layer';
 
 const USAGE_DESCRIPTION =
   'Estimated context for the next model request. ' + "Token counts are approximate and may differ from the provider's estimate.";
@@ -53,6 +55,8 @@ const COMPACTED_CELL = '▦';
 const BUFFER_CELL = '⛝';
 const FREE_CELL = '⛶';
 const BREAKDOWN_MARKER = '•';
+/** Title and its trailing blank row the full-content wheel layer spends outside its body. */
+const FULL_CONTENT_FIXED_LINE_COUNT = 2;
 
 /** Everything the Usage view renders, classified once when the view opens. */
 export interface UsageViewInput {
@@ -94,14 +98,16 @@ export class UsageView implements ModalTab {
   private readonly navigator: ListNavigator;
   private readonly cache = new RenderCache();
   private readonly fitMapScale: number | undefined;
+  private readonly wheelScrollLines: number;
   private context: ModalTabContext | undefined;
   private mapScale: UsageMapScale = 'window';
   private currentWidth: number | undefined;
 
   /** Create a view over one precomputed usage snapshot. */
-  public constructor(theme: Theme, input: UsageViewInput) {
+  public constructor(theme: Theme, input: UsageViewInput, wheelScrollLines: number = DEFAULT_WHEEL_SCROLL_LINES) {
     this.theme = theme;
     this.usage = input.usage;
+    this.wheelScrollLines = wheelScrollLines;
     this.legendRows = this.buildLegendRows();
     const selectableCount = this.legendRows.filter(row => row.type === 'category').length;
     this.navigator = new ListNavigator(this.legendRows.length, 1, selectableCount);
@@ -122,8 +128,13 @@ export class UsageView implements ModalTab {
     return hints;
   }
 
-  /** Handle the view-local map-zoom key; navigation arrives as actions. */
+  /** Handle the view-local map-zoom key; navigation arrives as actions and wheel steps the list. */
   public handleInput(data: string): void {
+    const wheel = parseWheelDirection(data);
+    if (wheel !== undefined) {
+      if (this.navigator.moveBy(wheel)) this.cache.clear();
+      return;
+    }
     if (matchesKey(data, 'z')) this.toggleMapScale();
   }
 
@@ -425,7 +436,7 @@ export class UsageView implements ModalTab {
         entries,
         entryHeader: entry => this.entryHeader(entry),
         entryBody: (entry, width) => this.entryContentLines(entry, Math.max(10, width - BODY_INDENT.length * 2 - 1), compactSkills),
-        description: width => this.previewDescriptionLines(width, row, entries),
+        description: (width, height) => this.previewDescriptionLines(width, height, row, entries),
         openFullContent: entry => this.openFullContent(row, entry, compactSkills),
       }),
     );
@@ -435,13 +446,28 @@ export class UsageView implements ModalTab {
   private openFullContent(row: CategoryLegendRow, entry: UsagePreviewEntry, compactSkills: boolean): void {
     const breadcrumb = entry.breadcrumb.map(normalizeInlineText).filter(Boolean).join(' / ');
     this.context?.pushLayer(
-      new PreviewLayer(this.theme, {
+      new WheelPreviewLayer(this.theme, {
         title: () => this.theme.fg('accent', this.theme.bold(breadcrumb || normalizeInlineText(row.category.label))),
         meta: () => this.theme.fg('muted', formatTokens(entry.tokens)),
         // Match the block stream's two-column selection gutter so its hidden-line count stays exact.
         body: width => this.entryContentLines(entry, Math.max(10, width - BODY_INDENT.length * 2 - 3), compactSkills),
+        description: (width, height) => this.fullContentLegendLines(width, height, entry, compactSkills),
+        wheelScrollLines: this.wheelScrollLines,
       }),
     );
+  }
+
+  /**
+   * Marker legend for one block's full content, sized against the rows its own
+   * body leaves below the layer frame (mirrors the block stream's legend).
+   */
+  private fullContentLegendLines(width: number, height: number | undefined, entry: UsagePreviewEntry, compactSkills: boolean): string[] {
+    const wrapWidth = Math.max(10, width - BODY_INDENT.length * 2 - 3);
+    return previewLegendLines(this.theme, [entry], {
+      width,
+      availableRows: Math.max(1, (height ?? 24) - FULL_CONTENT_FIXED_LINE_COUNT),
+      contentLineCount: Math.max(1, this.entryContentLines(entry, wrapWidth, compactSkills).length),
+    });
   }
 
   /** Bracketed entry header: dim datetime, breadcrumbs, visible tokens, and optional invisible reasoning. */
@@ -452,8 +478,10 @@ export class UsageView implements ModalTab {
       cells.push(theme.fg('dim', `[${formatEntryTimestamp(entry.timestamp)}]`));
     }
     entry.breadcrumb.forEach((cell, index) => {
-      const color: ThemeColor = index === 0 ? 'mdHeading' : 'muted';
-      cells.push(`${theme.fg('dim', '[')}${theme.fg(color, normalizeInlineText(cell))}${theme.fg('dim', ']')}`);
+      const lead = index === 0;
+      const color: ThemeColor = lead ? 'mdHeading' : 'muted';
+      const name = normalizeInlineText(cell);
+      cells.push(`${theme.fg('dim', '[')}${theme.fg(color, lead ? theme.bold(name) : name)}${theme.fg('dim', ']')}`);
     });
     cells.push(theme.fg('dim', formatTokens(entry.visibleTokens ?? entry.tokens)));
     if (entry.invisibleReasoning !== undefined) {
@@ -466,26 +494,51 @@ export class UsageView implements ModalTab {
     return cells.join(' ');
   }
 
-  /** Fixed explanation shown only when the thinking preview contains invisible-reasoning metadata. */
-  private previewDescriptionLines(width: number, row: CategoryLegendRow, entries: readonly UsagePreviewEntry[]): string[] {
-    if (row.rootId !== 'agent-thinking-messages') return [];
-    const hasInvisibleReasoning = entries.some(entry => entry.invisibleReasoning !== undefined);
-    return hasInvisibleReasoning ? wrapDescriptionLines(this.theme, INVISIBLE_REASONING_DESCRIPTION, 'dim', width) : [];
+  /**
+   * Marker legend for a category preview, or the fixed reasoning notation when
+   * the thinking category carries invisible-reasoning metadata.
+   */
+  private previewDescriptionLines(
+    width: number,
+    height: number | undefined,
+    row: CategoryLegendRow,
+    entries: readonly UsagePreviewEntry[],
+  ): string[] {
+    if (row.rootId === 'agent-thinking-messages') {
+      const hasInvisibleReasoning = entries.some(entry => entry.invisibleReasoning !== undefined);
+      return hasInvisibleReasoning ? wrapDescriptionLines(this.theme, INVISIBLE_REASONING_DESCRIPTION, 'dim', width) : [];
+    }
+    return previewLegendLines(this.theme, entries, {
+      width,
+      availableRows: Math.max(1, (height ?? 24) - 3),
+      contentLineCount: this.previewContentLineCount(width, row, entries),
+    });
+  }
+
+  /** Uncapped content rows the block stream would occupy, used only to size the legend. */
+  private previewContentLineCount(width: number, row: CategoryLegendRow, entries: readonly UsagePreviewEntry[]): number {
+    // The block stream hands entry bodies a bodyWidth already reduced by its two-column gutter.
+    const wrapWidth = Math.max(10, width - 2 - BODY_INDENT.length * 2 - 1);
+    const compactSkills = row.rootId === 'user-messages';
+    return Math.max(
+      1,
+      entries.reduce((total, entry) => total + this.entryContentLines(entry, wrapWidth, compactSkills).length + 2, -1),
+    );
   }
 
   /** Sanitized, wrapped, per-entry-capped content lines indented under the header. */
   private entryContentLines(entry: UsagePreviewEntry, wrapWidth: number, compactSkills: boolean): string[] {
     const indent = BODY_INDENT.repeat(2);
-    const wrapText = (text: string): string[] => {
+    const wrapText = (text: string, jsonSpan: JsonSpan | undefined): string[] => {
       const lines: string[] = [];
-      for (const paragraph of this.entryPreviewText(text, compactSkills).split('\n')) {
+      for (const paragraph of this.entryPreviewText(expandJsonSpan(text, jsonSpan), compactSkills).split('\n')) {
         const wrapped = wrapTextWithAnsi(paragraph, wrapWidth);
         const paragraphLines = wrapped.length === 0 ? [''] : wrapped;
         for (const line of paragraphLines) lines.push(line === '' ? '' : `${indent}${line}`);
       }
       return lines;
     };
-    return previewBodyLines(this.theme, entry, wrapWidth, wrapText);
+    return previewBodyLines(this.theme, entry, wrapWidth, wrapText, entry.breadcrumb.at(-1));
   }
 
   /** Sanitize raw entry text and replace complete attached skills with pi-colored badges. */

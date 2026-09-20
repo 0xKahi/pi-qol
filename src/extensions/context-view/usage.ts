@@ -1,6 +1,5 @@
-/** Forked from dimk90/pi-context-view at f6f007b867212bcf81a61519c8e40ce209cdd608 (MIT). */
 /**
- * Pure context-usage classification: combine the frozen Initial snapshot's
+ * Pure context-usage classification: combine the current branch's measured
  * prompt/tool decomposition with the live session messages into estimated
  * category totals. No pi API access — unit-testable.
  */
@@ -29,14 +28,16 @@ export interface UsageInputs {
 
 /**
  * Estimate the current/next-request context composition. Prompt and tool
- * categories come from the frozen Initial snapshot; message categories are
- * classified from the live session context. Empty categories are dropped and
+ * categories come from the caller's current-state snapshot; message categories are
+ * classified from the live session context. System messages have already been
+ * replayed into that snapshot and must not count again. Empty categories are dropped and
  * every aggregate equals the exact sum of its children.
  */
 export function computeUsage(inputs: UsageInputs): ContextUsageSnapshot {
+  const prompt = classifyPromptCategories(inputs.snapshot);
   const categories = [
-    ...classifyPromptCategories(inputs.snapshot),
-    ...classifyMessages(inputs.messages, contextOnlyMessages(inputs.snapshot)),
+    ...prompt.categories,
+    ...classifyMessages(inputs.messages, requestOnlyMessages(inputs.snapshot), prompt.promptAdditions),
   ].filter(category => category.tokens > 0);
   return {
     computedAt: inputs.computedAt ?? new Date(),
@@ -76,9 +77,17 @@ export function toReportedUsage(usage: ContextUsage | undefined): ReportedContex
   };
 }
 
-/** Map frozen snapshot items to prompt/tool/memory/skill categories. */
-function classifyPromptCategories(snapshot: InitialSnapshot): UsageCategory[] {
+/** Prompt-derived categories, plus the additions the Extensions category adopts. */
+interface PromptCategories {
+  readonly categories: UsageCategory[];
+  /** Prompt text appended by extensions, kept out of pi's own System Prompt total. */
+  readonly promptAdditions: UsageCategory[];
+}
+
+/** Map frozen snapshot items to prompt/tool/instruction/skill categories. */
+function classifyPromptCategories(snapshot: InitialSnapshot): PromptCategories {
   const systemPrompt: UsageCategory[] = [];
+  const promptAdditions: UsageCategory[] = [];
   const systemTools: UsageCategory[] = [];
   const customTools: UsageCategory[] = [];
   const mcpTools: UsageCategory[] = [];
@@ -89,8 +98,11 @@ function classifyPromptCategories(snapshot: InitialSnapshot): UsageCategory[] {
       switch (item.kind) {
         case 'base-prompt':
         case 'append-prompt':
-        case 'prompt-addition':
           systemPrompt.push(leafFromItem(item));
+          break;
+        case 'prompt-addition':
+          // Named by owner, because Extensions groups contributors rather than content.
+          promptAdditions.push({ ...leafFromItem(item), label: item.source.label });
           break;
         case 'tool':
           if (item.source.native) systemTools.push(...breakdownFromItem(item));
@@ -98,7 +110,7 @@ function classifyPromptCategories(snapshot: InitialSnapshot): UsageCategory[] {
           else customTools.push(leafFromItem(item));
           break;
         case 'context-file':
-          contextFiles.push(leafFromItem(item));
+          contextFiles.push(...breakdownFromItem(item));
           break;
         case 'skills':
           skills.push(...breakdownFromItem(item));
@@ -109,14 +121,18 @@ function classifyPromptCategories(snapshot: InitialSnapshot): UsageCategory[] {
       }
     }
   }
-  return withoutEmpty([
-    aggregate('system-prompt', 'System Prompt', systemPrompt),
-    aggregate('system-tools', 'System Tools', systemTools),
-    aggregate('custom-tools', 'Custom Tools', customTools),
-    aggregate('mcp-tools', 'MCP Tools', mcpTools),
-    aggregate('context-files', 'Memory (AGENTS.md)', contextFiles),
-    aggregate('skills', 'Skills', skills),
-  ]);
+  // Local layer keeps pi-qol's stable category order, ids, and labels.
+  return {
+    categories: withoutEmpty([
+      aggregate('system-prompt', 'System Prompt', systemPrompt),
+      aggregate('system-tools', 'System Tools', systemTools),
+      aggregate('custom-tools', 'Custom Tools', customTools),
+      aggregate('mcp-tools', 'MCP Tools', mcpTools),
+      aggregate('context-files', 'Memory (AGENTS.md)', contextFiles),
+      aggregate('skills', 'Skills', skills),
+    ]),
+    promptAdditions,
+  };
 }
 
 /** Best-effort MCP attribution from the only public provenance field available. */
@@ -124,13 +140,19 @@ function isMcpTool(item: InjectionItem): boolean {
   return /(^|[^a-z])mcp([^a-z]|$)/i.test(`${item.source.id} ${item.source.label}`);
 }
 
-/** Collect frozen messages that existed only in the transformed provider context. */
-function contextOnlyMessages(snapshot: InitialSnapshot): InjectionItem[] {
-  return snapshot.groups.flatMap(group => group.items.filter(item => item.kind === 'message' && item.contextOnly === true));
+/** Collect frozen messages that existed only in the captured outgoing request. */
+function requestOnlyMessages(snapshot: InitialSnapshot): InjectionItem[] {
+  return snapshot.groups.flatMap(group =>
+    group.items.filter(item => item.kind === 'message' && item.requestOnly === true && item.systemMessage === undefined),
+  );
 }
 
-/** Classify live session messages and frozen context-only injections with preview entries. */
-function classifyMessages(messages: ContextEvent['messages'], contextOnly: readonly InjectionItem[]): UsageCategory[] {
+/** Classify live session messages and frozen request-only injections with preview entries. */
+function classifyMessages(
+  messages: ContextEvent['messages'],
+  requestOnly: readonly InjectionItem[],
+  promptAdditions: readonly UsageCategory[],
+): UsageCategory[] {
   const user: UsagePreviewEntry[] = [];
   const agentText: UsagePreviewEntry[] = [];
   const agentThinking: UsagePreviewEntry[] = [];
@@ -140,15 +162,19 @@ function classifyMessages(messages: ContextEvent['messages'], contextOnly: reado
   const toolResults = new Map<string, UsagePreviewEntry[]>();
   const customMessages = new Map<string, UsagePreviewEntry[]>();
 
-  for (const item of contextOnly) {
+  for (const item of requestOnly) {
     appendEntry(customMessages, item.source.label, {
       breadcrumb: [item.label],
       tokens: item.tokens,
       text: item.text,
+      jsonSpan: item.jsonSpan,
     });
   }
   for (const message of messages) {
     switch (message.role) {
+      case 'system':
+        // Sections and tool deltas already contribute through the replayed snapshot.
+        break;
       case 'user':
         user.push({
           timestamp: message.timestamp,
@@ -169,6 +195,8 @@ function classifyMessages(messages: ContextEvent['messages'], contextOnly: reado
             breadcrumb: ['assistant', block.name],
             tokens: textTokens(block.name.length + args.length),
             text: `${block.name}(${args})`,
+            // The arguments sit between the call parentheses this entry adds around them.
+            jsonSpan: { start: block.name.length + 1, end: block.name.length + 1 + args.length },
           });
         }
         break;
@@ -232,7 +260,8 @@ function classifyMessages(messages: ContextEvent['messages'], contextOnly: reado
     leaf('agent-thinking-messages', 'Agent Thinking Messages', agentThinking),
     leaf('agent-tool-call-messages', 'Agent Tool Call Messages', agentToolCalls),
     toolOutput,
-    aggregate('extension-messages', 'Extensions', leavesFromMap('custom-message', customMessages)),
+    // One category per contributing extension, whether it sent messages or appended prompt text.
+    aggregate('extension-messages', 'Extensions', [...promptAdditions, ...leavesFromMap('custom-message', customMessages)]),
     leaf('compacted-data', 'Compacted Data', compacted),
   ]);
 }
@@ -253,7 +282,16 @@ function leafFromItem(item: InjectionItem): UsageCategory {
     id: `item:${item.id}`,
     label: item.label,
     tokens: item.tokens,
-    entries: [{ breadcrumb: [item.label], tokens: item.tokens, text: item.text, sections: item.sections?.map(section => ({ ...section })) }],
+    entries: [
+      {
+        breadcrumb: [item.label],
+        tokens: item.tokens,
+        text: item.text,
+        jsonSpan: item.jsonSpan,
+        // Tool parts stay a preview breakdown of the same estimate, never separate entries.
+        sections: item.sections,
+      },
+    ],
   };
 }
 

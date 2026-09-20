@@ -17,18 +17,23 @@ import {
   type ModalTab,
   type ModalTabContext,
   type NavigationAction,
-  PreviewLayer,
   RenderCache,
   wrapDescriptionLines,
 } from '../../../libs/modal';
 import type { InitialSnapshot, InjectionItem } from '../model';
 import { buildInjectionRows, collectItemsById, type InjectionRow, normalizeInlineText, normalizePreviewText } from './injections-model';
-import { previewBodyLines } from './section-preview';
+import { expandJsonSpan } from './json-preview';
+import { type ContextMarker, droppedMarker, markerLegendLines, movedMarker } from './markers';
+import { previewBodyLines, previewLegendLines } from './section-preview';
+import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection } from './wheel';
+import { WheelPreviewLayer } from './wheel-preview-layer';
 
 const LIST_DESCRIPTION = 'Injections into the model context for the first turn, with token estimates.';
 const CURSOR_COLUMN_WIDTH = 2;
 const MAX_TOKEN_VALUE_COLUMN = 54;
 const TOKEN_LEADER_GAP = 4;
+/** Title + blank rows the wheel preview spends outside its body and legend. */
+const PREVIEW_FIXED_LINE_COUNT = 2;
 
 /** Everything the Injections view renders. */
 export interface InjectionsViewInput {
@@ -47,16 +52,18 @@ export class InjectionsView implements ModalTab {
   private readonly navigator: ListNavigator;
   private readonly itemsById: Map<string, InjectionItem>;
   private readonly cache = new RenderCache();
+  private readonly wheelScrollLines: number;
   private context: ModalTabContext | undefined;
   private previewItem: InjectionItem | undefined;
   private previewLines: string[] | undefined;
   private previewWrapWidth: number | undefined;
 
-  public constructor(theme: Theme, input: InjectionsViewInput) {
+  public constructor(theme: Theme, input: InjectionsViewInput, wheelScrollLines: number = DEFAULT_WHEEL_SCROLL_LINES) {
     this.theme = theme;
     this.rows = buildInjectionRows(input.snapshot);
     this.navigator = new ListNavigator(this.rows.length, 1, this.rows.length - 2);
     this.itemsById = collectItemsById(input.snapshot);
+    this.wheelScrollLines = wheelScrollLines;
   }
 
   public get label(): string {
@@ -71,8 +78,10 @@ export class InjectionsView implements ModalTab {
     return [['Enter', 'Preview']];
   }
 
-  public handleInput(_data: string): void {
-    // All Injections keys are semantic navigation actions handled by the shell.
+  /** One wheel notch steps the selection one row, like a single step key. */
+  public handleInput(data: string): void {
+    const wheel = parseWheelDirection(data);
+    if (wheel !== undefined && this.navigator.moveBy(wheel)) this.cache.clear();
   }
 
   /** Apply semantic movement in the hierarchy, or open an item preview. */
@@ -101,7 +110,7 @@ export class InjectionsView implements ModalTab {
 
     const terminalRows = height ?? this.rows.length + 10;
     const headerLines = this.headerLines(width);
-    const descriptionLines = wrapDescriptionLines(this.theme, LIST_DESCRIPTION, 'dim', width);
+    const descriptionLines = this.descriptionLines(width);
     const viewport = calculateViewport(this.rows.length, terminalRows, headerLines.length + descriptionLines.length + 2);
     this.navigator.setVisibleCount(viewport.visibleCount);
 
@@ -133,13 +142,25 @@ export class InjectionsView implements ModalTab {
     this.previewWrapWidth = undefined;
 
     const source = normalizeInlineText(item.source.label);
+    const marker = item.moved === true ? movedMarker(this.theme) : '';
     this.context?.pushLayer(
-      new PreviewLayer(this.theme, {
+      new WheelPreviewLayer(this.theme, {
         title: () => this.theme.fg('accent', this.theme.bold(normalizeInlineText(item.label))),
-        meta: () => this.theme.fg('muted', `${source} · ${item.tokens.toLocaleString('en-US')} tokens`),
+        meta: () => this.theme.fg('muted', `${source} · ${item.tokens.toLocaleString('en-US')} tokens`) + marker,
         body: width => this.getPreviewLines(width, item),
+        description: (width, layerHeight) => this.previewLegendLines(width, layerHeight, item),
+        wheelScrollLines: this.wheelScrollLines,
       }),
     );
+  }
+
+  /** Fixed legend for the markers this item's preview renders, when content leaves room for it. */
+  private previewLegendLines(width: number, layerHeight: number | undefined, item: InjectionItem): string[] {
+    return previewLegendLines(this.theme, [item], {
+      width,
+      availableRows: Math.max(1, (layerHeight ?? 24) - PREVIEW_FIXED_LINE_COUNT),
+      contentLineCount: this.getPreviewLines(width, item).length,
+    });
   }
 
   private getPreviewLines(width: number, item: InjectionItem): string[] {
@@ -147,18 +168,31 @@ export class InjectionsView implements ModalTab {
     if (this.previewItem === item && this.previewLines !== undefined && this.previewWrapWidth === wrapWidth) {
       return this.previewLines;
     }
-    const wrapText = (text: string): string[] => {
-      const lines: string[] = [];
-      for (const paragraph of normalizePreviewText(text).split('\n')) {
-        const wrapped = wrapTextWithAnsi(paragraph, wrapWidth);
-        if (wrapped.length === 0) lines.push('');
-        else for (const line of wrapped) lines.push(`${BODY_INDENT}${line}`);
-      }
-      return lines;
-    };
-    this.previewLines = previewBodyLines(this.theme, item, wrapWidth, wrapText);
+    // The item preview is the full-content level, so marked JSON expands here.
+    const lines = previewBodyLines(
+      this.theme,
+      item,
+      wrapWidth,
+      (text, jsonSpan) => this.wrappedTextLines(expandJsonSpan(text, jsonSpan), wrapWidth),
+      item.label,
+    );
+    this.previewLines = lines;
     this.previewWrapWidth = wrapWidth;
-    return this.previewLines;
+    return lines;
+  }
+
+  /** Wrap sanitized text into indented preview lines, keeping blank lines. */
+  private wrappedTextLines(text: string, wrapWidth: number): string[] {
+    const lines: string[] = [];
+    for (const paragraph of normalizePreviewText(text).split('\n')) {
+      const wrapped = wrapTextWithAnsi(paragraph, wrapWidth);
+      if (wrapped.length === 0) {
+        lines.push('');
+        continue;
+      }
+      for (const line of wrapped) lines.push(`${BODY_INDENT}${line}`);
+    }
+    return lines;
   }
 
   // === List rendering ===
@@ -207,7 +241,7 @@ export class InjectionsView implements ModalTab {
     return { value: Math.max(1, Math.min(idealValue, width - tokenWidth)) };
   }
 
-  /** One hierarchy row with dim leaders and a full token estimate when width permits. */
+  /** One hierarchy row with dim leaders, a full token estimate, and any state marker. */
   private injectionLine(
     row: Exclude<InjectionRow, { readonly kind: 'separator' }>,
     columns: InjectionColumns,
@@ -219,7 +253,15 @@ export class InjectionsView implements ModalTab {
     const leader = this.tokenLeader(columns.value - visibleWidth(left));
     const value = row.tokens.toLocaleString('en-US');
     const tokens = row.kind === 'total' ? this.theme.bold(this.theme.fg('text', value)) : this.theme.fg(selected ? 'accent' : 'muted', value);
-    return fitLine(`${left}${leader}${tokens}`, width);
+    const line = `${left}${leader}${tokens}`;
+    return fitLine(`${line}${this.rowMarker(row, columns.value + value.length, width)}`, width);
+  }
+
+  /** State marker after the estimate, dropped whole rather than truncated when it does not fit. */
+  private rowMarker(row: Exclude<InjectionRow, { readonly kind: 'separator' }>, lineWidth: number, width: number): string {
+    if (row.kind !== 'item') return '';
+    const marker = row.dropped === true ? droppedMarker(this.theme) : row.moved === true ? movedMarker(this.theme) : '';
+    return lineWidth + visibleWidth(marker) <= width ? marker : '';
   }
 
   /** Fill a label/value gap with dim dots, retaining spaces at both ends. */
@@ -256,6 +298,25 @@ export class InjectionsView implements ModalTab {
   private scrollLine(width: number): string {
     if (!this.navigator.hasOverflow) return this.fit('', width);
     return this.fit(this.theme.fg('dim', `${BODY_INDENT}(${this.navigator.selectedOrdinal + 1}/${this.navigator.selectableCount})`), width);
+  }
+
+  /**
+   * Wrapped dialog description: the list sentence and one legend bullet per
+   * marker the hierarchy rows show.
+   */
+  private descriptionLines(width: number): string[] {
+    const lines = wrapDescriptionLines(this.theme, LIST_DESCRIPTION, 'dim', width);
+    lines.push(...markerLegendLines(this.theme, this.rowMarkers(), width));
+    return lines;
+  }
+
+  /** Markers the hierarchy rows carry, whatever the current width leaves room to render. */
+  private rowMarkers(): ContextMarker[] {
+    const items = this.rows.filter(row => row.kind === 'item');
+    const markers: ContextMarker[] = [];
+    if (items.some(row => row.dropped === true)) markers.push('dropped');
+    if (items.some(row => row.moved === true)) markers.push('moved');
+    return markers;
   }
 
   private fit(line: string, width: number): string {
