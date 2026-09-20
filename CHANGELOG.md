@@ -1,5 +1,11 @@
 # @0xkahi/pi-qol
 
+## 1.1.0
+
+### Minor Changes
+
+- a51fc83: updated pi to 0.86.1 and updated context view to match pi-context-view 0.6.0
+
 ## 1.0.6
 
 ### Patch Changes
