@@ -1,5 +1,11 @@
 # @0xkahi/pi-qol
 
+## 1.1.1
+
+### Patch Changes
+
+- cf6dec5: upgrade pi deps to v0.87.0
+
 ## 1.1.0
 
 ### Minor Changes
