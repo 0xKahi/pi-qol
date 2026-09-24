@@ -1,5 +1,11 @@
 # @0xkahi/pi-qol
 
+## 1.1.2
+
+### Patch Changes
+
+- 935a321: improve workmux extension
+
 ## 1.1.1
 
 ### Patch Changes
