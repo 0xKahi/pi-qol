@@ -1,29 +1,56 @@
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { ConfigLoader } from '../../config-loader';
 
-export function activateWorkmux(pi: ExtensionAPI) {
+type AssistantState = { stopReason?: string; errorMessage?: string };
+
+export function registerWorkmux(pi: ExtensionAPI, deps: { config: ConfigLoader }) {
+  let sessionActive = false;
+  let writes = Promise.resolve();
+
   function setStatus(status: string) {
-    pi.exec('workmux', ['set-window-status', status]).catch(() => {});
+    writes = writes.then(async () => {
+      await pi.exec('workmux', ['set-window-status', status]).catch(() => {});
+    });
+    return writes;
+  }
+
+  function latestAssistantWasAborted(ctx: ExtensionContext) {
+    const branch = ctx.sessionManager.getBranch() as Array<{
+      type?: string;
+      message?: AssistantState & { role?: string };
+    }>;
+    for (let index = branch.length - 1; index >= 0; index--) {
+      const entry = branch[index];
+      if (entry?.type !== 'message' || entry.message?.role !== 'assistant') continue;
+      return (
+        entry.message.stopReason === 'aborted' ||
+        (entry.message.stopReason === 'error' && /\boperation was aborted\b/i.test(entry.message.errorMessage ?? ''))
+      );
+    }
+    return false;
   }
 
   pi.on('session_start', async () => {
-    setStatus('waiting');
+    sessionActive = false;
+    await writes;
+    if (!deps.config.isEnabled('workmux')) return;
+    await pi.exec('workmux', ['register-agent']).catch(() => {});
+    sessionActive = true;
   });
 
   pi.on('agent_start', async () => {
-    setStatus('working');
+    if (!sessionActive) return;
+    await setStatus('working');
   });
 
-  pi.on('agent_end', async () => {
-    setStatus('done');
+  pi.on('agent_settled', async (_event, ctx) => {
+    if (!sessionActive) return;
+    if (latestAssistantWasAborted(ctx)) return;
+    await setStatus('done');
   });
-}
 
-export function registerWorkmux(pi: ExtensionAPI, deps: { config: ConfigLoader }) {
-  let registered = false;
-  pi.on('session_start', (_event, _ctx) => {
-    if (registered || !deps.config.isEnabled('workmux')) return;
-    activateWorkmux(pi);
-    registered = true;
+  pi.on('session_shutdown', async () => {
+    sessionActive = false;
+    await writes;
   });
 }
