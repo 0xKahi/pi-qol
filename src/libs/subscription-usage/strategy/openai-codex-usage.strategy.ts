@@ -1,5 +1,10 @@
 import { RawDataParser } from '../../../utils/raw-data-parser.util';
-import type { ProviderAuth, RateWindow, SubscriptionUsageStrategy } from '../subscription-usage-api.util';
+import {
+  type ProviderAuth,
+  type RateWindow,
+  SUBSCRIPTION_USAGE_FETCH_TIMEOUT_MS,
+  type SubscriptionUsageStrategy,
+} from '../subscription-usage-api.util';
 
 const PRIMARY_WINDOW_FALLBACK_SECONDS = 10800;
 const SECONDARY_WINDOW_FALLBACK_SECONDS = 86400;
@@ -65,6 +70,7 @@ export class OpenAiCodexUsageStrategy implements SubscriptionUsageStrategy {
   private request(opts: ProviderAuth) {
     return new Request('https://chatgpt.com/backend-api/wham/usage', {
       method: 'GET',
+      signal: AbortSignal.timeout(SUBSCRIPTION_USAGE_FETCH_TIMEOUT_MS),
       headers: {
         Authorization: `Bearer ${opts.token}`,
         ...(opts?.accountId ? { 'ChatGPT-Account-Id': opts.accountId } : {}),

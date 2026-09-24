@@ -1,5 +1,10 @@
 import { RawDataParser } from '../../../utils/raw-data-parser.util';
-import type { ProviderAuth, RateWindow, SubscriptionUsageStrategy } from '../subscription-usage-api.util';
+import {
+  type ProviderAuth,
+  type RateWindow,
+  SUBSCRIPTION_USAGE_FETCH_TIMEOUT_MS,
+  type SubscriptionUsageStrategy,
+} from '../subscription-usage-api.util';
 
 export class AnthropicOauthUsageStrategy implements SubscriptionUsageStrategy {
   readonly provider = 'anthropic';
@@ -7,6 +12,8 @@ export class AnthropicOauthUsageStrategy implements SubscriptionUsageStrategy {
 
   async fetchUsage(auth: ProviderAuth) {
     const response = await fetch(this.request(auth));
+    if (!response.ok) return;
+
     const data = RawDataParser.asRecord(await response.json());
     if (!data) return;
 
@@ -26,12 +33,13 @@ export class AnthropicOauthUsageStrategy implements SubscriptionUsageStrategy {
         resetAt: resetDate && Number.isFinite(resetDate.getTime()) ? resetDate : undefined,
       });
     }
-    return windows;
+    return windows.length > 0 ? windows : undefined;
   }
 
   private request(opts: ProviderAuth) {
     return new Request('https://api.anthropic.com/api/oauth/usage', {
       method: 'GET',
+      signal: AbortSignal.timeout(SUBSCRIPTION_USAGE_FETCH_TIMEOUT_MS),
       headers: {
         Authorization: `Bearer ${opts.token}`,
         'anthropic-beta': 'oauth-2025-04-20',

@@ -31,6 +31,9 @@ type ComponentOptions = {
   agentName?: boolean;
   defaultAgentName?: string;
   event?: unknown;
+  provider?: string;
+  oauth?: boolean;
+  isSubscription?: boolean;
 };
 
 function createComponent(options: ComponentOptions = {}): CustomFooterComponent {
@@ -56,8 +59,11 @@ function createComponent(options: ComponentOptions = {}): CustomFooterComponent 
       onBranchChange: () => () => {},
     },
     ctx: {
-      model: { id: 'model-id', provider: 'test', contextWindow: 128_000, reasoning: false },
-      modelRegistry: { isUsingOAuth: () => false },
+      model: { id: 'model-id', provider: options.provider ?? 'test', contextWindow: 128_000, reasoning: false },
+      modelRegistry: {
+        isUsingOAuth: () => options.oauth ?? false,
+        getProvider: () => (options.isSubscription === undefined ? undefined : { auth: { oauth: { isSubscription: options.isSubscription } } }),
+      },
       sessionManager: {
         getCwd: () => '/repo/demo',
         getSessionName: () => 'session-name',
@@ -105,6 +111,21 @@ describe('CustomFooterComponent styling', () => {
     expect(pathLine).toBe('DIR demo (main) • session-name');
     expect(statsLine).toContain('model-id');
     expect(`${pathLine}${statsLine}`).not.toContain('\x1b');
+  });
+
+  test('shows subscription for OAuth providers with subscription auth', () => {
+    const [, statsLine] = createComponent({ oauth: true, isSubscription: true }).render(200);
+    expect(statsLine).toContain('(sub)');
+  });
+
+  test('does not show subscription for OAuth providers without subscription auth', () => {
+    const [, statsLine] = createComponent({ oauth: true }).render(200);
+    expect(statsLine).not.toContain('(sub)');
+  });
+
+  test('always shows subscription for kimi-coding', () => {
+    const [, statsLine] = createComponent({ provider: 'kimi-coding' }).render(200);
+    expect(statsLine).toContain('(sub)');
   });
 
   test('keeps the existing path line unchanged when the badge is disabled', () => {

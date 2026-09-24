@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { PathUtil } from '../../utils/path.util';
 import { RawDataParser } from '../../utils/raw-data-parser.util';
 
+export const SUBSCRIPTION_USAGE_FETCH_TIMEOUT_MS = 10_000;
+
 export type ProviderAuth = {
   token: string;
   accountId?: string;

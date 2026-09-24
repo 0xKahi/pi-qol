@@ -126,6 +126,36 @@ describe('custom-footer token stats', () => {
     });
   });
 
+  test('calculateUsageTotals includes usage, tool result, branch summary, and compaction entries', () => {
+    const usage = {
+      input: 10,
+      output: 20,
+      cacheRead: 30,
+      cacheWrite: 40,
+      totalTokens: 100,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.01 },
+    };
+    const entryBase = {
+      id: 'entry',
+      parentId: null,
+      timestamp: '2026-01-01T00:00:00.000Z',
+    };
+    const entries = [
+      { ...entryBase, type: 'usage', kind: 'cache_warm', provider: 'test', model: 'test', usage },
+      { ...entryBase, type: 'message', message: { role: 'toolResult', toolCallId: 'tool', toolName: 'test', content: [], isError: false, timestamp: Date.now(), usage } },
+      { ...entryBase, type: 'branch_summary', fromId: 'source', summary: 'summary', usage },
+      { ...entryBase, type: 'compaction', summary: 'summary', firstKeptEntryId: 'kept', tokensBefore: 100, usage },
+    ] as SessionEntry[];
+
+    expect(calculateUsageTotals(entries)).toEqual({
+      totalInput: 40,
+      totalOutput: 80,
+      totalCacheRead: 120,
+      totalCacheWrite: 160,
+      totalCost: 0.04,
+    });
+  });
+
   test('buildStatsLeft assembles tokens, cache cluster, cost, and context', () => {
     expect(
       buildStatsLeft({

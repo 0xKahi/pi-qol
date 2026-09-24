@@ -1,4 +1,5 @@
 import { dye } from '@0xkahi/cli-dye';
+import type { Usage } from '@earendil-works/pi-ai';
 import type { ContextUsage, SessionEntry } from '@earendil-works/pi-coding-agent';
 import { clampPercent, renderProgressBar } from './progress-bar';
 import type { CustomFooterColors, CustomFooterDisplay, CustomFooterIcons, FooterTheme, SupportedProvider, UsageTotals } from './types';
@@ -40,20 +41,28 @@ export function calculateUsageTotals(entries: readonly SessionEntry[]): UsageTot
   };
 
   for (const entry of entries) {
-    if (entry.type !== 'message' || entry.message.role !== 'assistant') continue;
+    if (entry.type === 'message' && entry.message.role === 'assistant') {
+      const usage = entry.message.usage;
+      addUsageToTotals(totals, usage);
 
-    const usage = entry.message.usage;
-    totals.totalInput += usage.input;
-    totals.totalOutput += usage.output;
-    totals.totalCacheRead += usage.cacheRead;
-    totals.totalCacheWrite += usage.cacheWrite;
-    totals.totalCost += usage.cost.total;
-
-    const latestPromptTokens = usage.input + usage.cacheRead + usage.cacheWrite;
-    totals.latestCacheHitRate = latestPromptTokens > 0 ? (usage.cacheRead / latestPromptTokens) * 100 : undefined;
+      const latestPromptTokens = usage.input + usage.cacheRead + usage.cacheWrite;
+      totals.latestCacheHitRate = latestPromptTokens > 0 ? (usage.cacheRead / latestPromptTokens) * 100 : undefined;
+    } else if (entry.type === 'message' && entry.message.role === 'toolResult' && entry.message.usage) {
+      addUsageToTotals(totals, entry.message.usage);
+    } else if ((entry.type === 'usage' || entry.type === 'branch_summary' || entry.type === 'compaction') && entry.usage) {
+      addUsageToTotals(totals, entry.usage);
+    }
   }
 
   return totals;
+}
+
+function addUsageToTotals(totals: UsageTotals, usage: Usage): void {
+  totals.totalInput += usage.input;
+  totals.totalOutput += usage.output;
+  totals.totalCacheRead += usage.cacheRead;
+  totals.totalCacheWrite += usage.cacheWrite;
+  totals.totalCost += usage.cost.total;
 }
 
 export function buildSubscriptionUsageSegment({

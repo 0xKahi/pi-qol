@@ -111,7 +111,7 @@ export class CustomFooterComponent implements Component {
 
   private renderStatsLine(width: number, config: CustomFooterConfig): string {
     const model = this.deps.ctx.model;
-    const usingSubscription = model ? this.deps.ctx.modelRegistry.isUsingOAuth(model) : false;
+    const usingSubscription = model ? this.isUsingSubscription(model) : false;
     const contextUsage = this.deps.ctx.getContextUsage();
     const contextWindow = contextUsage?.contextWindow ?? model?.contextWindow ?? 0;
     const subscriptionUsageSegment = this.renderSubscriptionUsageSegment(config, usingSubscription);
@@ -156,6 +156,14 @@ export class CustomFooterComponent implements Component {
     const truncatedRight = truncateToWidth(rightSide, availableForRight, '');
     const truncatedRightWidth = visibleWidth(truncatedRight);
     return `${statsLeft}${' '.repeat(Math.max(0, width - statsLeftWidth - truncatedRightWidth))}${truncatedRight}`;
+  }
+
+  private isUsingSubscription(model: NonNullable<CustomFooterComponentDeps['ctx']['model']>): boolean {
+    if (model.provider === 'kimi-coding') return true;
+
+    return (
+      this.deps.ctx.modelRegistry.isUsingOAuth(model) && this.deps.ctx.modelRegistry.getProvider(model.provider)?.auth?.oauth?.isSubscription === true
+    );
   }
 
   private buildModelNameSegment(config: CustomFooterConfig): string {
