@@ -1,12 +1,13 @@
 import { type Api, getSupportedThinkingLevels, type Model } from '@earendil-works/pi-ai';
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { ConfigLoader } from '../../config-loader';
-import { presentModal } from '../../libs/modal';
+import { presentModal, type SectionFrame } from '../../libs/modal';
+import type { SubscriptionUsageCache } from '../../libs/subscription-usage';
 import type { ModelSelectConfig } from '../../schemas/model-select.config.schema';
 import { COMMAND_NAME, PI_VIM_KEY_EVENT_ID } from './constants';
 import { ModelFormatter } from './model-formatter';
 import { buildModelLists, findExactModel } from './model-lists';
-import { ModelSelectDialog } from './model-select-dialog';
+import { ModelSelectModal } from './model-select-modal';
 import type { DialogResult } from './types';
 
 export async function applySelectedModel(pi: ExtensionAPI, ctx: ExtensionContext, model: Model<Api>, config: ModelSelectConfig): Promise<void> {
@@ -22,7 +23,13 @@ export async function applySelectedModel(pi: ExtensionAPI, ctx: ExtensionContext
   }
 }
 
-export async function showModelSelector(pi: ExtensionAPI, args: string, ctx: ExtensionContext, configLoader: ConfigLoader): Promise<void> {
+export async function showModelSelector(
+  pi: ExtensionAPI,
+  args: string,
+  ctx: ExtensionContext,
+  configLoader: ConfigLoader,
+  usageCache: SubscriptionUsageCache,
+): Promise<void> {
   // `waitForIdle` only exists on command contexts. When invoked from the event
   // bus we get a plain ExtensionContext, so fall back to a best-effort guard.
   if ('waitForIdle' in ctx && typeof ctx.waitForIdle === 'function') {
@@ -45,34 +52,33 @@ export async function showModelSelector(pi: ExtensionAPI, args: string, ctx: Ext
   const modelLists = await buildModelLists(ctx, config);
   const registryError = ctx.modelRegistry.getError();
 
-  const selected = await presentModal<DialogResult>(
-    ctx.ui,
-    config.layout,
-    (tui, theme, keybindings, done, frame) =>
-      new ModelSelectDialog(tui, theme, keybindings, {
-        currentModel: ctx.model,
-        favouriteItems: modelLists.favouriteItems,
-        favouriteLabel: config.favourite_label,
-        favouriteWarnings: modelLists.favouriteWarnings,
-        groupLists: modelLists.groupLists,
-        searchItems: modelLists.searchItems,
-        hideGroupTabs: config.hide_tabs.groups,
-        hideSearchTab: config.hide_tabs.search,
-        providerFilter: config.provider_filter,
-        defaultReasoning: config.default_reasoning,
-        configWarnings: registryError ? [`models.json: ${registryError}`] : [],
-        initialSearch: args.trim(),
-        frame,
-        onDone: done,
-      }),
-  );
+  const selected = await presentModal<DialogResult>(ctx.ui, config.layout, (tui, theme, keybindings, done, frame) => {
+    const sectionFrame: SectionFrame = frame === 'bordered' ? 'bordered' : 'inline';
+    return new ModelSelectModal(tui, theme, keybindings, {
+      currentModel: ctx.model,
+      favouriteItems: modelLists.favouriteItems,
+      favouriteLabel: config.favourite_label,
+      favouriteWarnings: modelLists.favouriteWarnings,
+      groupLists: modelLists.groupLists,
+      searchItems: modelLists.searchItems,
+      hideGroupTabs: config.hide_tabs.groups,
+      hideSearchTab: config.hide_tabs.search,
+      providerFilter: config.provider_filter,
+      defaultReasoning: config.default_reasoning,
+      configWarnings: registryError ? [`models.json: ${registryError}`] : [],
+      initialSearch: args.trim(),
+      frame: sectionFrame,
+      usageCache,
+      onDone: done,
+    });
+  });
 
   if (selected) {
     await applySelectedModel(pi, ctx, selected, config);
   }
 }
 
-function activateModelSelect(pi: ExtensionAPI, deps: { config: ConfigLoader; initialCtx?: ExtensionContext }) {
+function activateModelSelect(pi: ExtensionAPI, deps: { config: ConfigLoader; usageCache: SubscriptionUsageCache; initialCtx?: ExtensionContext }) {
   // Keep a reference to the latest context so the event-bus handler (which gets
   // no context of its own) can open the modal too. Lazy activation may happen
   // during session_start, so seed this with the context that triggered it.
@@ -90,7 +96,7 @@ function activateModelSelect(pi: ExtensionAPI, deps: { config: ConfigLoader; ini
         ctx.ui.notify('(pi-qol) model_select is disabled', 'warning');
         return;
       }
-      await showModelSelector(pi, args, ctx, deps.config);
+      await showModelSelector(pi, args, ctx, deps.config, deps.usageCache);
     },
   });
 
@@ -101,13 +107,13 @@ function activateModelSelect(pi: ExtensionAPI, deps: { config: ConfigLoader; ini
     if (!ctx || !deps.config.isEnabled('model_select')) {
       return;
     }
-    void showModelSelector(pi, '', ctx, deps.config).catch(error => {
+    void showModelSelector(pi, '', ctx, deps.config, deps.usageCache).catch(error => {
       ctx.ui.notify(`Failed to open model selector: ${error instanceof Error ? error.message : String(error)}`, 'error');
     });
   });
 }
 
-export function registerModelSelect(pi: ExtensionAPI, deps: { config: ConfigLoader }) {
+export function registerModelSelect(pi: ExtensionAPI, deps: { config: ConfigLoader; usageCache: SubscriptionUsageCache }) {
   let modelSelectRegistered = false;
 
   pi.on('session_start', (_event, ctx) => {
@@ -115,7 +121,7 @@ export function registerModelSelect(pi: ExtensionAPI, deps: { config: ConfigLoad
       return;
     }
 
-    activateModelSelect(pi, { config: deps.config, initialCtx: ctx });
+    activateModelSelect(pi, { ...deps, initialCtx: ctx });
     modelSelectRegistered = true;
   });
 }

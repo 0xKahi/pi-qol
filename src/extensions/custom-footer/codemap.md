@@ -21,11 +21,10 @@ The extension is feature-gated by the `custom_footer` config flag and can dynami
 - **Component pattern**: `CustomFooterComponent` implements the `Component` interface (`render`, `invalidate`, `dispose`) so the TUI can call it on every frame.
 - **Dependency injection**: The component receives its dependencies (`tui`, `theme`, `footerData`, `ctx`, `config`, `getThinkingLevel`) in a single `CustomFooterComponentDeps` object, keeping rendering logic decoupled from construction.
 - **Data provider abstraction**: `FooterDataProvider` isolates footer-specific data (git branch, extension statuses, provider count, branch-change notifications) from the broader `ExtensionContext`.
-- **Cache manager**: `SubscriptionUsageManager` caches OAuth usage responses with a TTL and coalesces in-flight requests per provider.
-- **Strategy pattern**: Provider-specific OAuth usage fetch strategies (`AnthropicOauthUsageStrategy`, `OpenAiCodexUsageStrategy`) are selected at runtime inside `SubscriptionUsageManager`.
+- **Shared cache**: root injects one `SubscriptionUsageCache`; the component subscribes for renders and unsubscribes in `dispose`. Provider strategies and TTL/in-flight deduplication live in the shared library.
 - **Provider normalization**: `resolveSupportedProvider` maps provider aliases (`codex`, `openai`, `chatgpt`) to the internal `SupportedProvider` union.
 - **Window selection**: `pickSubscriptionUsageWindow` chooses the rate window with the nearest reset, falling back to the first window when no resets are available.
-- **Pure formatting helpers**: `token-stats.ts` and `progress-bar.ts` contain stateless functions for number formatting, usage aggregation, subscription segment construction, and progress-bar rendering, making them easy to test.
+- **Pure formatting helpers**: `token-stats.ts` and the shared library's `progress-bar.ts` contain stateless functions for number formatting, usage aggregation, subscription segment construction, and progress-bar rendering, making them easy to test.
 
 ## Data & Control Flow
 
@@ -38,8 +37,8 @@ The extension is feature-gated by the `custom_footer` config flag and can dynami
    - Extension status line (only when statuses exist).
 5. **Usage aggregation**: `calculateUsageTotals` in `token-stats.ts` sums assistant-message token counts and computes the latest cache hit rate from `sessionManager.getEntries()`.
 6. **Stats composition**: `buildStatsLeft` receives the pre-computed totals, display toggles, context usage, context window, subscription segment, and theme; it returns the left-hand stats string.
-7. **Subscription usage**: `renderSubscriptionUsageSegment` resolves the provider, asks `SubscriptionUsageManager.ensureFresh(provider)` for cached data, picks the rate window with the nearest reset via `pickSubscriptionUsageWindow`, and builds a colored progress segment via `buildSubscriptionUsageSegment` in `token-stats.ts`.
-8. **Async refresh**: `SubscriptionUsageManager` fetches usage asynchronously when the cached entry is older than `SUBSCRIPTION_USAGE_TTL_MS`. On success it calls `tui.requestRender()` via the `onUpdate` callback to update the footer.
+7. **Subscription usage**: `renderSubscriptionUsageSegment` resolves the provider, asks the injected `SubscriptionUsageCache.ensureFresh(provider)` for cached data (`ok` windows or last-success windows for temporary failures), picks the rate window with the nearest reset via `pickSubscriptionUsageWindow`, and builds a colored progress segment via `buildSubscriptionUsageSegment` in `token-stats.ts`.
+8. **Async refresh**: the shared cache fetches asynchronously after its TTL. Completion notifications call `tui.requestRender()` through the component subscription; network/http-error/unavailable retain last-success windows, while no-auth/expired hide usage. Temporary failures without earlier successful windows also hide usage.
 9. **Git branch updates**: `footerData.onBranchChange` registers a render request callback that is cleaned up in `dispose`.
 
 ## Integration Points
@@ -48,5 +47,5 @@ The extension is feature-gated by the `custom_footer` config flag and can dynami
 - **`@earendil-works/pi-tui`**: Implements the `Component` contract and uses `truncateToWidth`, `visibleWidth`, and `TUI.requestRender`.
 - **`../../config-loader`**: Reads the `custom_footer` feature flag and full footer config (colors, icons, display toggles) via `ConfigLoader`.
 - **`../../schemas/config.schema`**: `CustomFooterConfig` is derived from the `Config` schema's `custom_footer` shape.
-- **`@0xkahi/cli-dye`**: Applies configured truecolor ANSI styling to directory text, model name, subscription usage labels, and progress-bar fill.
+- **`@0xkahi/cli-dye`**: Applies configured truecolor ANSI styling to directory text and model name. Subscription labels, filled progress and percentages use fixed provider colors from the shared usage library; no footer usage-color configuration remains.
 - **`../../libs/subscription-usage/**`**: Delegates OAuth usage fetching and reset formatting to `SubscriptionUsageApi` and provider-specific strategies.

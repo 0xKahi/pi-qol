@@ -1,6 +1,6 @@
 import { modelsAreEqual } from '@earendil-works/pi-ai';
 import type { KeybindingsManager, Theme } from '@earendil-works/pi-coding-agent';
-import type { Component, Focusable, TUI } from '@earendil-works/pi-tui';
+import type { TUI } from '@earendil-works/pi-tui';
 import { ListTab, ModalDialog, type ModalTab } from '../../libs/modal';
 import { MAX_CONFIG_WARNING_LINES, MAX_VISIBLE_MODELS } from './constants';
 import { ModelFormatter } from './model-formatter';
@@ -8,11 +8,15 @@ import type { DialogOptions, DialogResult, ModelItem, TabIdentity } from './type
 
 /**
  * Model picker dialog: a `ModalDialog` configured with one `ListTab` per
- * section (permanent Favourites, configured groups, Search), a shared filter
+ * tab (permanent Favourites, configured groups, Search), a shared filter
  * input, and wrap-around picker navigation driven by the host keybindings.
  */
-export class ModelSelectDialog implements Component, Focusable {
-  private readonly dialog: ModalDialog<DialogResult>;
+export function createSelectModelSection(tui: TUI, theme: Theme, keybindings: KeybindingsManager, options: DialogOptions): ModalDialog<DialogResult> {
+  return new SelectModelSectionBuilder(tui, theme, keybindings, options).dialog;
+}
+
+class SelectModelSectionBuilder {
+  public readonly dialog: ModalDialog<DialogResult>;
 
   constructor(
     tui: TUI,
@@ -42,30 +46,10 @@ export class ModelSelectDialog implements Component, Focusable {
       notices: options.configWarnings,
       maxNoticeLines: MAX_CONFIG_WARNING_LINES,
       filter: { initialQuery: options.initialSearch },
-      frame: options.frame,
+      frame: 'none',
       cancelValue: null,
       onComplete: result => options.onDone(result),
     });
-  }
-
-  get focused(): boolean {
-    return this.dialog.focused;
-  }
-
-  set focused(value: boolean) {
-    this.dialog.focused = value;
-  }
-
-  invalidate(): void {
-    this.dialog.invalidate();
-  }
-
-  handleInput(data: string): void {
-    this.dialog.handleInput(data);
-  }
-
-  render(width: number): string[] {
-    return this.dialog.render(width);
   }
 
   private createTab(definition: { identity: TabIdentity; label: string; items: ModelItem[] }): ModalTab {

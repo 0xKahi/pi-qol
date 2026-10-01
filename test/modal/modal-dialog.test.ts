@@ -147,6 +147,17 @@ describe('ModalDialog', () => {
     expect(dialog.render(80).length).toBeLessThanOrEqual(12);
   });
 
+  test('embedded frame renders inline content without rules and accepts dynamic extra hints', () => {
+    const options = { onComplete: () => undefined };
+    const standalone = createDialog([listTab(['a'])], options);
+    const embedded = createDialog([listTab(['a'])], { ...options, frame: 'none' });
+    expect(embedded.render(80)).toEqual(standalone.render(80).slice(1, -1));
+    const hinted = createDialog([listTab(['a'])], { ...options, extraHints: () => [['r', 'Refresh']] });
+    expect(hinted.render(100).at(-2)).toContain('r Refresh · Esc Close');
+    hinted.setExtraHints([['s', 'Section']]);
+    expect(hinted.render(100).at(-2)).toContain('s Section · Esc Close');
+  });
+
   test('bordered frame wraps content in a rounded border', () => {
     const dialog = createDialog([listTab(['a'])], { frame: 'bordered', onComplete: () => undefined });
     const rendered = dialog.render(40);

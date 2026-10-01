@@ -1,8 +1,9 @@
 import { dye } from '@0xkahi/cli-dye';
 import type { Usage } from '@earendil-works/pi-ai';
 import type { ContextUsage, SessionEntry } from '@earendil-works/pi-coding-agent';
-import { clampPercent, renderProgressBar } from './progress-bar';
-import type { CustomFooterColors, CustomFooterDisplay, CustomFooterIcons, FooterTheme, SupportedProvider, UsageTotals } from './types';
+import { clampPercent, providerUsageColor, renderProgressBar } from '../../libs/subscription-usage';
+import { EMPTY_BAR_ICON, FILLED_BAR_ICON, SUBSCRIPTION_BAR_WIDTH } from './constants';
+import type { CustomFooterDisplay, CustomFooterIcons, FooterTheme, SupportedProvider, UsageTotals } from './types';
 
 export type SubscriptionUsageSegmentInput = {
   provider: SupportedProvider;
@@ -66,20 +67,18 @@ function addUsageToTotals(totals: UsageTotals, usage: Usage): void {
 }
 
 export function buildSubscriptionUsageSegment({
-  colors,
   icons,
   theme,
   usage,
 }: {
-  colors: Pick<CustomFooterColors, 'anthropicUsage' | 'codexUsage'>;
   icons: Pick<CustomFooterIcons, 'refresh'>;
   theme: FooterTheme;
   usage: SubscriptionUsageSegmentInput;
 }): string {
-  const providerColor = usage.provider === 'anthropic' ? colors.anthropicUsage : colors.codexUsage;
+  const providerColor = providerUsageColor(usage.provider);
   const pct = clampPercent(usage.usedPercent);
   const roundedPercent = Math.round(pct).toString();
-  const bar = renderProgressBar(pct);
+  const bar = renderProgressBar(pct, SUBSCRIPTION_BAR_WIDTH, { filled: FILLED_BAR_ICON, empty: EMPTY_BAR_ICON });
   const foreground = dye.hex(providerColor);
 
   const resetParts = usage.resetDescription ? [icons.refresh, usage.resetDescription].filter(Boolean).join(' ') : '';

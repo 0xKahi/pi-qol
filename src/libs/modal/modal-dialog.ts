@@ -21,7 +21,7 @@ import { fitToTerminalHeight, hintRow, normalizeTerminalRows, padLine, singleLin
 import type { Hint, ModalLayer, ModalTab, NavigationScheme } from './types';
 
 /** Framing style: inline rules, or a rounded border for host-centered overlays. */
-export type ModalFrame = 'inline' | 'bordered';
+export type ModalFrame = 'inline' | 'bordered' | 'none';
 
 /** Height policy: natural content height, or bounded to half the terminal. */
 export type ModalHeight = 'auto' | 'half';
@@ -37,6 +37,8 @@ export interface ModalDialogOptions<TResult> {
   /** Navigation scheme; defaults to the host keybindings scheme. */
   navigation?: NavigationScheme;
   frame?: ModalFrame;
+  /** Additional footer hints, inserted before Esc. */
+  extraHints?: Hint[] | (() => Hint[]);
   height?: ModalHeight;
   /** Optional title line rendered above the tab strip. */
   title?: string | (() => string);
@@ -59,6 +61,7 @@ export class ModalDialog<TResult> implements Component, Focusable {
   private readonly layerStacks = new Map<ModalTab, ModalLayer[]>();
   private activeTabIndex: number;
   private _focused = false;
+  private extraHints: Hint[] | (() => Hint[]);
 
   public constructor(
     private readonly tui: TUI,
@@ -70,6 +73,7 @@ export class ModalDialog<TResult> implements Component, Focusable {
     this.scheme = options.navigation ?? new PiKeybindingsScheme(keybindings);
     this.frame = options.frame ?? 'inline';
     this.height = options.height ?? 'auto';
+    this.extraHints = options.extraHints ?? [];
     this.activeTabIndex = Math.min(Math.max(0, options.initialTabIndex ?? 0), options.tabs.length - 1);
 
     for (const tab of options.tabs) {
@@ -118,6 +122,14 @@ export class ModalDialog<TResult> implements Component, Focusable {
     this.options.onComplete(result);
   }
 
+  public setExtraHints(hints: Hint[]): void {
+    this.extraHints = hints;
+  }
+
+  public resetNavigation(): void {
+    this.scheme.reset();
+  }
+
   public handleInput(data: string): void {
     if (this.options.tabs.length > 1) {
       if (matchesKey(data, Key.shift('tab'))) {
@@ -163,7 +175,8 @@ export class ModalDialog<TResult> implements Component, Focusable {
     const rule = this.theme.fg('border', '─'.repeat(safeWidth));
     const lines = [rule, ...this.buildContentLines(safeWidth, this.contentHeight()), rule];
     const budget = this.heightBudget();
-    return budget === undefined ? lines : fitToTerminalHeight(lines, budget, rule);
+    const fitted = budget === undefined ? lines : fitToTerminalHeight(lines, budget, rule);
+    return this.frame === 'none' ? fitted.slice(1, -1) : fitted;
   }
 
   // === Input routing internals ===
@@ -291,6 +304,7 @@ export class ModalDialog<TResult> implements Component, Focusable {
     const target = layer ?? this.activeTab;
     const hints: Hint[] = [...this.scheme.hints(layer === undefined ? 'Navigate' : 'Scroll'), ...target.hints()];
     if (this.options.tabs.length > 1) hints.push(['Tab', 'Switch']);
+    hints.push(...(typeof this.extraHints === 'function' ? this.extraHints() : this.extraHints));
     hints.push(['Esc', layer === undefined ? 'Close' : 'Back']);
     return hints;
   }

@@ -5,7 +5,7 @@ describe('custom-footer config schema', () => {
   test('materializes nested defaults when custom_footer is omitted or partially provided', () => {
     expect(ConfigSchema.parse({}).custom_footer).toMatchObject({
       enabled: false,
-      colors: { anthropicUsage: '#D97706', codexUsage: '#10B981' },
+      colors: {},
       icons: { directory: ' ', refresh: '', cache: ' ', cacheRead: ' ', cacheWrite: ' ' },
       display: { tokens: true, cache: true, agentName: false },
       defaultAgentName: 'DEFAULT',
@@ -47,6 +47,12 @@ describe('custom-footer config schema', () => {
 
   test('rejects whitespace-only default agent names', () => {
     expect(() => ConfigSchema.parse({ custom_footer: { defaultAgentName: ' \n\t ' } })).toThrow();
+  });
+
+  test('strips former usage-color overrides in partial and full configs', () => {
+    const legacy = { custom_footer: { colors: { anthropicUsage: '#000000', codexUsage: '#ffffff' } } };
+    expect(PartialConfigSchema.parse(legacy).custom_footer?.colors).toEqual({});
+    expect(ConfigSchema.parse(legacy).custom_footer.colors).toEqual({});
   });
 
   test('rejects invalid configured agent-name colors', () => {

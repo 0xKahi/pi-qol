@@ -2,7 +2,7 @@ import { basename } from 'node:path';
 import { dye } from '@0xkahi/cli-dye';
 import type { Component } from '@earendil-works/pi-tui';
 import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
-import { pickSubscriptionUsageWindow, resolveSupportedProvider, SubscriptionUsageManager } from './subscription-usage-manager';
+import { pickSubscriptionUsageWindow, resolveSupportedProvider } from '../../libs/subscription-usage';
 import { buildStatsLeft, buildSubscriptionUsageSegment, calculateUsageTotals } from './token-stats';
 import type { CustomFooterComponentDeps, CustomFooterConfig } from './types';
 
@@ -16,14 +16,14 @@ function sanitizeStatusText(text: string): string {
 }
 
 export class CustomFooterComponent implements Component {
-  private readonly usageManager: SubscriptionUsageManager;
+  private readonly unsubscribeUsage: () => void;
   private readonly unsubscribeBranch: () => void;
   private readonly unsubscribeAgentDisplay: () => void;
   private restoredDefaultFooter = false;
   private disposed = false;
 
   constructor(private readonly deps: CustomFooterComponentDeps) {
-    this.usageManager = new SubscriptionUsageManager(undefined, () => {
+    this.unsubscribeUsage = deps.usageCache.subscribe(() => {
       if (!this.disposed) deps.tui.requestRender();
     });
     this.unsubscribeBranch = deps.footerData.onBranchChange(() => deps.tui.requestRender());
@@ -38,6 +38,7 @@ export class CustomFooterComponent implements Component {
 
   dispose(): void {
     this.disposed = true;
+    this.unsubscribeUsage();
     this.unsubscribeBranch();
     this.unsubscribeAgentDisplay();
   }
@@ -187,14 +188,15 @@ export class CustomFooterComponent implements Component {
     const provider = resolveSupportedProvider(model.provider);
     if (!provider) return undefined;
 
-    const response = this.usageManager.ensureFresh(provider);
-    if (!response) return undefined;
+    const entry = this.deps.usageCache.ensureFresh(provider);
+    const response = entry?.result;
+    if (!response || response.status === 'no-auth' || response.status === 'expired') return undefined;
 
-    const window = pickSubscriptionUsageWindow(response.rateWindow);
+    const windows = response.status === 'ok' ? response.windows : entry?.lastSuccess?.windows;
+    const window = pickSubscriptionUsageWindow(windows ?? []);
     if (!window) return undefined;
 
     return buildSubscriptionUsageSegment({
-      colors: config.colors,
       icons: config.icons,
       theme: this.deps.theme,
       usage: {
@@ -202,7 +204,7 @@ export class CustomFooterComponent implements Component {
         responseLabel: response.label,
         windowLabel: window.label,
         usedPercent: window.usedPercent,
-        resetDescription: window.resetAt ? this.usageManager.formatResetDescription(window.resetAt) : undefined,
+        resetDescription: window.resetAt ? this.deps.usageCache.formatResetDescription(window.resetAt) : undefined,
       },
     });
   }

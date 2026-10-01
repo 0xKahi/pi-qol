@@ -1,10 +1,11 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import type { ConfigLoader } from '../../config-loader';
 import { SET_AGENT_NAME_EVENT_ID } from '../../constants';
+import type { SubscriptionUsageCache } from '../../libs/subscription-usage';
 import { AgentDisplayState } from './agent-display-state';
 import { CustomFooterComponent } from './footer-component';
 
-export function registerCustomFooter(pi: ExtensionAPI, deps: { config: ConfigLoader }): void {
+export function registerCustomFooter(pi: ExtensionAPI, deps: { config: ConfigLoader; usageCache: SubscriptionUsageCache }): void {
   let installed = false;
   const agentDisplayState = new AgentDisplayState('DEFAULT');
 
@@ -25,6 +26,7 @@ export function registerCustomFooter(pi: ExtensionAPI, deps: { config: ConfigLoa
           footerData,
           ctx,
           config: deps.config,
+          usageCache: deps.usageCache,
           agentDisplayState,
           getThinkingLevel: () => pi.getThinkingLevel(),
         }),

@@ -2,27 +2,16 @@
 
 ## Responsibility
 
-Encapsulates fetching and normalizing subscription usage (rate-limit utilization) from external AI providers into a common `RateWindow` representation. It is the single place the system queries provider-specific usage APIs and turns their heterogeneous responses into a consistent, UI-friendly shape.
+Shared subscription data pipeline for Claude and Codex, exported through `index.ts`.
 
-## Design Patterns
+- `subscription-usage-api.util.ts`: provider/auth/window types, supported-provider labels derived from strategies, shared fetch timeout and TTL constants, status-discriminated `UsageResult`, injectable API. Classifies no-auth, expired, HTTP errors, network/timeout, unavailable and ok; owns fetch timeout and error catching. Malformed JSON is unavailable; fetch and abort failures remain network.
+- `credential-resolver.ts`: verifies stored OAuth auth through PathUtil and RawDataParser, asks the latest host context for refreshed tokens, falls back to stored access. Codex account id comes from stored accountId or defensive JWT decoding.
+- `subscription-usage-cache.ts`: shared injected cache with TTL, per-provider in-flight deduplication, forced refresh, retained last-success windows/timestamp, and completion subscribers. Includes provider aliases and soonest-reset window selection.
+- `pace.ts`: pure elapsed-window pace and relative reset formatting.
+- `progress-bar.ts`: pure percentage clamp and glyph-configurable bar (defaults █/░).
+- `provider-color.ts`: fixed shared provider colors (Claude #D97706, Codex #10B981), exported as PROVIDER_USAGE_COLORS and providerUsageColor; no configuration dependency.
+- `strategy/`: pure request construction and JSON normalization; no network I/O.
 
-- **Strategy**: `SubscriptionUsageApi` consumes a `SubscriptionUsageStrategy` (`AnthropicOauthUsageStrategy`, `OpenAiCodexUsageStrategy`) without knowing provider-specific details.
-- **Adapter / Normalization**: each strategy adapts a provider response to the shared `RateWindow[]` model (`label`, `usedPercent`, `resetAt`).
-- **Safe parsing**: `RawDataParser` guards against unexpected JSON shapes and missing fields.
-- **Utility API class**: `SubscriptionUsageApi` wraps auth loading, fetching, and formatting in one injectable-style class.
+## Flow
 
-## Data & Control Flow
-
-1. A caller invokes `SubscriptionUsageApi.fetchUsage(strategy)`.
-2. The API loads provider OAuth credentials from the local auth config via `PathUtil.findPiAuthConfig()`.
-3. It calls `strategy.fetchUsage(auth)`.
-4. The strategy performs a provider HTTP request, parses JSON, and maps relevant fields to `RateWindow[]`.
-5. The API wraps the result in `FetchUsageResponse` (`label`, `rateWindow`).
-6. `formatResetDescription(resetAt)` converts reset timestamps to human-readable relative strings (`5m`, `2h30m`, `1d`, etc.).
-
-## Integration Points
-
-- **Local auth config**: `PathUtil.findPiAuthConfig()` supplies `SubscriptionAuthconfig`, which maps providers to `{ access, accountId }` objects.
-- **Anthropic API**: `AnthropicOauthUsageStrategy` calls `https://api.anthropic.com/api/oauth/usage` with `Authorization: Bearer <token>` and `anthropic-beta: oauth-2025-04-20`.
-- **OpenAI Codex API**: `OpenAiCodexUsageStrategy` calls `https://chatgpt.com/backend-api/wham/usage` with bearer token and optional `ChatGPT-Account-Id` header.
-- **Shared utilities**: depends on `src/utils/path.util` for config discovery and `src/utils/raw-data-parser.util` for defensive JSON parsing.
+Consumers ensure freshness or force refresh → cache picks strategy → API resolves credentials and fetches → strategy parses windows with durations → cache stores status and last success, then notifies subscribers. Footer shows ok windows or last-success windows for network/http-error/unavailable; no-auth/expired hide usage. Other consumers can retain earlier windows alongside failure status.

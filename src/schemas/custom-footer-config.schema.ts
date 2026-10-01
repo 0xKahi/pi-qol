@@ -10,8 +10,6 @@ const CustomFooterColorsSchema = z.object({
   directory: ColorHexSchema.optional(),
   modelName: ColorHexSchema.optional(),
   agentName: ColorHexSchema.optional(),
-  anthropicUsage: ColorHexSchema.optional().default('#D97706'),
-  codexUsage: ColorHexSchema.optional().default('#10B981'),
 });
 
 const CustomFooterIconsSchema = z.object({
@@ -50,8 +48,6 @@ export const PartialCustomFooterConfigSchema = z.object({
       directory: ColorHexSchema.optional(),
       modelName: ColorHexSchema.optional(),
       agentName: ColorHexSchema.optional(),
-      anthropicUsage: ColorHexSchema.optional(),
-      codexUsage: ColorHexSchema.optional(),
     })
     .optional(),
   icons: z

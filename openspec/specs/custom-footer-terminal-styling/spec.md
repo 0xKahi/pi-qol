@@ -7,7 +7,7 @@ Define how the custom footer applies configured terminal truecolor styling while
 ## Requirements
 
 ### Requirement: Configured truecolor styling
-The custom footer SHALL apply each configured custom-footer hex color to its corresponding text using terminal truecolor when color output is enabled.
+The custom footer SHALL apply each configured custom-footer hex color to its corresponding text using terminal truecolor when color output is enabled. The subscription usage segment SHALL use the fixed per-provider usage color (Claude `#D97706`, Codex `#10B981`) instead of a configured color.
 
 #### Scenario: Directory color is configured
 - **WHEN** the custom footer renders a directory with a configured directory color and color output is enabled
@@ -21,7 +21,7 @@ The custom footer SHALL apply each configured custom-footer hex color to its cor
 
 #### Scenario: Subscription usage color is configured
 - **WHEN** the custom footer renders supported-provider subscription usage and color output is enabled
-- **THEN** the response label, window label, filled progress, and percentage use the provider's configured foreground truecolor
+- **THEN** the response label, window label, filled progress, and percentage use that provider's fixed usage color
 
 ### Requirement: Styling fallback behavior
 The custom footer SHALL preserve readable plain text and existing Pi theme fallbacks when custom ANSI color output is unavailable or not configured.

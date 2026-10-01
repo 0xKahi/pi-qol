@@ -44,6 +44,16 @@ Favourites, ordered custom group tabs, provider filtering, and inline or overlay
 - **shared filtering** across Favourites, group, and Search tabs
 - **bidirectional tab navigation** with Tab and Shift+Tab
 - **provider filtering** for Search without removing models from favourite tabs
+- **sections**: opens on Select Model; `Ctrl+]` switches to the next section and
+  `Ctrl+[` to the previous (both wrap). Without the Kitty keyboard protocol,
+  `Ctrl+[` acts as Esc instead. Tab/Shift+Tab stay within the active section.
+- **Usage**: `[Claude]` and `[Codex]` tabs show every subscription rate window,
+  separated by blank lines, with a progress bar, used percentage, reset time,
+  pace, and data freshness. Fixed provider colors match the custom footer. Missing
+  credentials and request failures are shown explicitly. Usage shares the footer
+  cache and fetches only when visited; press `r` to refresh the active provider.
+  Navigate rows with `j`/`k`, arrows, `gg`/`G`; `q` or Esc closes without changing
+  the model. In Select Model, `q` still types in the filter.
 
 allow keybindings with [pi-vim-keys](https://github.com/0xKahi/pi-vim-keys) with eventId of `pi.vimKeys.event:pi-qol.model_select`
 
@@ -52,7 +62,8 @@ allow keybindings with [pi-vim-keys](https://github.com/0xKahi/pi-vim-keys) with
 Replaces pi's built-in interactive footer with the same three-line layout, but
 shows the current directory as an icon plus basename, supports hex color overrides,
 can hide token/cache clusters, and adds an OAuth subscription-usage progress bar
-for supported providers (Anthropic and OpenAI Codex).
+for supported providers (Anthropic and OpenAI Codex). Usage colors are fixed:
+Claude `#D97706` and Codex `#10B981`; former usage-color overrides are ignored.
 
 - **Directory line** — optional inverse-styled agent badge followed by the
   directory icon + basename, with optional git branch and session name. The badge
@@ -197,8 +208,6 @@ Context View is a fork of Dmitry Makarov's [pi-context-view](https://github.com/
 | `colors.directory`          | `hex`     | —         | Color the directory icon and basename.           |
 | `colors.modelName`          | `hex`     | —         | Color the right-aligned model name.              |
 | `colors.agentName`          | `hex`     | —         | Agent badge foreground color before inversion.   |
-| `colors.anthropicUsage`     | `hex`     | `#D97706` | Color the Claude subscription usage segment (bar + percentage). |
-| `colors.codexUsage`         | `hex`     | `#10B981` | Color the Codex subscription usage segment (bar + percentage).  |
 | `icons.directory`           | `string`  | nerd font | Glyph shown before the directory basename.       |
 | `icons.cache`               | `string`  | nerd font | Glyph for the cache cluster.                     |
 | `icons.cacheRead`           | `string`  | nerd font | Glyph for cache-read tokens.                     |

@@ -13,10 +13,12 @@ This extension implements the `/select-model` command and its interactive picker
   - `index.ts`: orchestrates activation, command handling, applying the selected model, setting default reasoning, and bridging registry errors into the dialog.
   - `model-lists.ts`: queries the registry and prepares favourite, grouped favourite, and searchable model lists; validates favourite entries against the registry and configured auth.
   - `model-formatter.ts`: pure static utilities for labels, descriptions, sorting, token formatting, capability detection, and search-text generation.
-  - `model-select-dialog.ts`: thin `ModalDialog` (shared modal library) configuration: one `ListTab` per section (permanent Favourites, groups, Search), a shared filter input, notices for config warnings, and per-section row/empty-state/footer hooks. The shared presenter supplies its resolved inline or bordered frame.
+  - `model-select-dialog.ts`: `createSelectModelSection` builds an embedded `ModalDialog` with one `ListTab` per tab (permanent Favourites, groups, Search), shared filter, warnings, and row/empty-state/footer hooks.
+  - `model-select-modal.ts`: `ModelSelectModal` composes Select Model (initial) and Usage through `SectionedModal`, uses the presenter frame typed as `SectionFrame`, subscribes to the shared usage cache, and starts a 1s interval that requests renders only while Usage is active. Completion from either section and host `dispose()` share idempotent interval/subscription cleanup; `scheduleTick` can be injected for tests.
+  - `usage-section/`: [usage section map](usage-section/codemap.md); Claude/Codex provider tabs, explicit status and freshness, all window rows with progress/reset/pace, retained Vim row navigation, and `r` refresh.
   - `constants.ts`: command name, cross-extension event ID, and dialog rendering limits.
   - `types.ts`: shared item, list, tab, and dialog option types.
-- **Modal library delegation**: `ModelSelectDialog` implements `Component` and `Focusable` by delegating to a `ModalDialog` from `src/libs/modal/`; the shell owns the tab strip, tab cycling, keybinding-driven navigation (wrap-around selection via `ListTab`), the shared filter `Input`, and the help footer.
+- **Modal library delegation**: `ModelSelectModal` extends `SectionedModal` from `src/libs/modal/`, containing retained embedded dialogs; Ctrl+] and disambiguated Ctrl+[ wrap sections, bare Esc stays dismissal, and Tab stays inside the active section. Each dialog shell owns the tab strip, tab cycling, keybinding-driven navigation (wrap-around selection via `ListTab`), the shared filter `Input`, and the help footer.
 - **Layout-aware presentation**: `showModelSelector` passes `model_select.layout` to the shared modal presenter, which coordinates the dialog's inline/bordered frame with normal or centered overlay mounting.
 - **Defensive guards**: checks feature enablement, UI availability, idle state (`waitForIdle`), exact-match short-circuit, and auth availability before applying a model.
 
@@ -42,14 +44,15 @@ This extension implements the `/select-model` command and its interactive picker
    - Favourites must exist in the registry and have configured auth; missing or unauthenticated entries are collected as warnings and omitted from the list.
    - Accepted favourites retain exact group memberships; the ordered `groups` config defines the visible group tabs. Duplicate favourite models are deduplicated by provider/id, and duplicate group names are collapsed while preserving configured order.
    - Any model-registry error is added to the dialog's `configWarnings` so it appears inside the picker.
-   - The shared `presentModal` helper creates a `ModelSelectDialog` with favourite/group/search lists, tab visibility controls, the current model, warnings, `initialSearch`, resolved frame, `defaultReasoning`, and an `onDone` callback. The overlay layout remains centered at 85% width with a one-cell margin.
+   - The shared `presentModal` helper creates a `ModelSelectModal` with favourite/group/search lists, tab visibility controls, the current model, warnings, `initialSearch`, resolved frame, `defaultReasoning`, and an `onDone` callback. The overlay layout remains centered at 85% width with a one-cell margin.
    - The dialog always creates a Favourites tab, adds visible group tabs and optional Search, and renders a width-aware tab strip, shared filter input, warnings, and help footer. If `initialSearch` is non-empty and Search is visible, the dialog starts on the Search tab and seeds the input.
 
 5. **User interaction**
    - Keyboard input is mapped through `keybindings.matches` for navigation, ordered tab cycling (`tab`/`shift+tab`), page up/down, confirmation, and cancellation.
    - Typing updates one shared query and re-filters every visible tab via `fuzzyFilter`; each tab retains its own selection index.
    - The Search tab displays the active `provider_filter` above the query input.
-   - Confirming a selection invokes `onDone` with the chosen `Model`; cancelling invokes `onDone(null)`.
+   - Confirming a selection invokes `onDone` with the chosen `Model`; cancelling from either section invokes `onDone(null)`, unsubscribing from usage cache updates first.
+   - Select Model alone makes no usage requests. First Usage activation calls `ensureFresh` for every supported provider; TTL and in-flight deduplication belong to the shared cache. Current provider preselection defaults to Claude when unsupported. Usage uses Vim navigation without a filter, and raw `r` forces active-provider refresh; cache completion requests re-render.
 
 6. **Apply result**
    - If a model is selected, `applySelectedModel` calls `pi.setModel`.
@@ -74,6 +77,7 @@ The `model_select` configuration is defined by `../../schemas/model-select.confi
 - **`ExtensionAPI` (`@earendil-works/pi-coding-agent`)**: used to register the command, listen to `session_start`, set the active model (`pi.setModel`), set the thinking level (`pi.setThinkingLevel`), and access the shared event bus (`pi.events`).
 - **`ExtensionContext` / `ExtensionCommandContext` (`@earendil-works/pi-coding-agent`)**: provides `modelRegistry`, `ui`, `hasUI`, `model`, `cwd`, and the optional `waitForIdle` guard.
 - **`ModelRegistry`**: refreshed and queried for available models, configured auth, lookup by `provider` + `modelId`, and error state (`getError`).
+- **`SubscriptionUsageCache` (`../../libs/subscription-usage`)**: injected from the root, shared with the footer; statuses and last-success windows drive Usage content, pace and progress helpers format its rows.
 - **`ConfigLoader` (`../../config-loader`)**: provides feature toggle state (`isEnabled('model_select')`), the typed `model_select` configuration object, and merges global + project JSON config.
 - **`@earendil-works/pi-ai`**: supplies the `Model<Api>` type, `modelsAreEqual` for stable identity comparisons, and `getSupportedThinkingLevels` for reasoning-level validation.
 - **`@earendil-works/pi-tui`**: supplies the `Input` component, `fuzzyFilter`, `matchesKey`, theme helpers, and rendering utilities (`truncateToWidth`, `visibleWidth`) used by the dialog.
