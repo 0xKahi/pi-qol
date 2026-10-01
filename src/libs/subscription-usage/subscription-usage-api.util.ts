@@ -1,80 +1,57 @@
-import { readFileSync } from 'node:fs';
-import { PathUtil } from '../../utils/path.util';
-import { RawDataParser } from '../../utils/raw-data-parser.util';
+import { AnthropicOauthUsageStrategy } from './strategy/anthropic-oauth-usage.strategy';
+import { OpenAiCodexUsageStrategy } from './strategy/openai-codex-usage.strategy';
 
 export const SUBSCRIPTION_USAGE_FETCH_TIMEOUT_MS = 10_000;
-
-export type ProviderAuth = {
-  token: string;
-  accountId?: string;
-};
+export const SUBSCRIPTION_USAGE_TTL_MS = 60_000;
 
 export type SubscriptionProvider = 'anthropic' | 'openai-codex';
-type SubscriptionAuthconfig = Partial<Record<SubscriptionProvider, Record<string, unknown>>>;
-
-export type RateWindow = {
-  label: string;
-  usedPercent: number;
-  resetAt?: Date;
-};
-
-export type FetchUsageResponse = {
-  label: string;
-  rateWindow: RateWindow[];
-};
+export const SUBSCRIPTION_PROVIDERS: readonly { provider: SubscriptionProvider; label: string }[] = [
+  { provider: 'anthropic', label: new AnthropicOauthUsageStrategy().label },
+  { provider: 'openai-codex', label: new OpenAiCodexUsageStrategy().label },
+];
+export type ProviderAuth = { token: string; accountId?: string };
+export type CredentialResolver = (provider: SubscriptionProvider) => Promise<ProviderAuth | undefined>;
+export type RateWindow = { label: string; usedPercent: number; resetAt?: Date; windowSeconds?: number };
+export type UsageResult =
+  | { status: 'ok'; label: string; windows: RateWindow[] }
+  | { status: 'no-auth' | 'expired' | 'network' | 'unavailable'; label: string }
+  | { status: 'http-error'; label: string; httpStatus: number };
 
 export interface SubscriptionUsageStrategy {
   readonly provider: SubscriptionProvider;
   readonly label: string;
-  fetchUsage(auth: ProviderAuth): Promise<RateWindow[] | undefined>;
+  request(auth: ProviderAuth): Request;
+  parse(json: unknown): RateWindow[];
 }
 
+export type SubscriptionUsageApiLike = Pick<SubscriptionUsageApi, 'fetchUsage'>;
+
 export class SubscriptionUsageApi {
-  async fetchUsage(strategy: SubscriptionUsageStrategy): Promise<FetchUsageResponse | undefined> {
-    const auth = this.getOauthProviderAuth(strategy.provider);
-    if (!auth) return;
-    const rateWindow = await strategy.fetchUsage(auth);
-    if (!rateWindow) return;
-    return {
-      label: strategy.label,
-      rateWindow,
-    };
-  }
+  constructor(
+    private readonly resolveCredentials: CredentialResolver,
+    private readonly fetchFn: (request: Request) => Promise<Response> = fetch,
+  ) {}
 
-  formatResetDescription(date: Date): string {
-    const diffMs = date.getTime() - Date.now();
-    if (diffMs <= 0) return 'now';
-
-    const minutes = Math.floor(diffMs / 60000);
-    if (minutes < 60) return `${minutes}m`;
-
-    const hours = Math.floor(minutes / 60);
-    const remainingMinutes = minutes % 60;
-    if (hours < 24) return remainingMinutes > 0 ? `${hours}h${remainingMinutes}m` : `${hours}h`;
-
-    const days = Math.floor(hours / 24);
-    const remainingHours = hours % 24;
-    return remainingHours > 0 ? `${days}d${remainingHours}h` : `${days}d`;
-  }
-
-  private getOauthProviderAuth(provider: SubscriptionProvider): ProviderAuth | undefined {
-    const auth = this.loadAuthConfig();
-    if (!auth) return;
-
-    const providerAuth = auth[provider];
-    const access = RawDataParser.stringValue(providerAuth?.access);
-    if (!access) return;
-
-    return {
-      token: access,
-      accountId: RawDataParser.stringValue(providerAuth?.accountId),
-    };
-  }
-
-  private loadAuthConfig(): SubscriptionAuthconfig | undefined {
-    const authJson = PathUtil.findPiAuthConfig();
-    if (!authJson.exists) return undefined;
-
-    return RawDataParser.asRecord(JSON.parse(readFileSync(authJson.path, 'utf-8'))) as SubscriptionAuthconfig | undefined;
+  async fetchUsage(strategy: SubscriptionUsageStrategy): Promise<UsageResult> {
+    const label = strategy.label;
+    try {
+      const auth = await this.resolveCredentials(strategy.provider);
+      if (!auth) return { status: 'no-auth', label };
+      const request = new Request(strategy.request(auth), { signal: AbortSignal.timeout(SUBSCRIPTION_USAGE_FETCH_TIMEOUT_MS) });
+      const response = await this.fetchFn(request);
+      if (response.status === 401 || response.status === 403) return { status: 'expired', label };
+      if (!response.ok) return { status: 'http-error', label, httpStatus: response.status };
+      let json: unknown;
+      try {
+        json = await response.json();
+      } catch (error) {
+        if (request.signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) throw error;
+        return { status: 'unavailable', label };
+      }
+      const windows = strategy.parse(json);
+      return windows.length ? { status: 'ok', label, windows } : { status: 'unavailable', label };
+    } catch {
+      return { status: 'network', label };
+    }
   }
 }

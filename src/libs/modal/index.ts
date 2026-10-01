@@ -10,6 +10,8 @@ export { VimNavigationScheme } from './navigation/vim-scheme';
 export { type ModalComponentFactory, type ModalLayout, presentModal } from './presenter';
 export { PreviewLayer, type PreviewLayerOptions } from './preview-layer';
 export { RenderCache } from './render-cache';
+export { renderSectionRule } from './section-strip';
+export { type ModalSection, SectionedModal, type SectionFrame } from './sectioned-modal';
 export { renderTabStrip } from './tab-strip';
 export { ListTab, type ListTabCounts, type ListTabFooterState, type ListTabOptions } from './tabs/list-tab';
 export {

@@ -3,6 +3,7 @@ import type { Api, Model } from '@earendil-works/pi-ai';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { ConfigLoader } from '../../src/config-loader';
 import { applySelectedModel, showModelSelector } from '../../src/extensions/model-select';
+import { SubscriptionUsageCache } from '../../src/libs/subscription-usage';
 import { ModelSelectConfigSchema } from '../../src/schemas/model-select.config.schema';
 import type { ReasoningLevel } from '../../src/schemas/shared-config.schema';
 
@@ -102,7 +103,7 @@ describe('model-select default reasoning', () => {
       getModelSelect: () => config('medium'),
     } as ConfigLoader;
 
-    await showModelSelector(pi, 'test-provider/test-model', ctx, configLoader);
+    await showModelSelector(pi, 'test-provider/test-model', ctx, configLoader, new SubscriptionUsageCache());
 
     expect(thinkingLevels).toEqual(['medium']);
   });

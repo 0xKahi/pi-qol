@@ -35,7 +35,7 @@ The schema defines four feature-flagged top-level sections, each wrapping relate
   - `layout`: Enum `inline` or `overlay` (default `inline`).
 - `custom_footer`: Custom footer content.
   - `enabled`: Boolean toggle (default `false`).
-  - `colors`: Hex color map (`directory`, `modelName`, `anthropicUsage`, `codexUsage`). `anthropicUsage` defaults to `#D97706`, `codexUsage` to `#10B981`.
+  - `colors`: Optional hex colors for `directory`, `modelName`, and `agentName`. Subscription usage colors are fixed in the usage library and omitted from the generated schema; legacy overrides are stripped by runtime Zod parsing.
   - `icons`: Glyph map for `directory`, `refresh`, `cache`, `cacheRead`, `cacheWrite` with default Unicode glyphs.
   - `display`: Object with `tokens` and `cache` booleans (default `true`).
 - `context_view`: Additional context viewer feature.

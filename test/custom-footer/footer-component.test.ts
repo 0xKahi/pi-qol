@@ -4,12 +4,11 @@ import { visibleWidth } from '@earendil-works/pi-tui';
 import { AgentDisplayState } from '../../src/extensions/custom-footer/agent-display-state';
 import { CustomFooterComponent } from '../../src/extensions/custom-footer/footer-component';
 import type { CustomFooterColors } from '../../src/extensions/custom-footer/types';
+import { SubscriptionUsageCache, type UsageResult } from '../../src/libs/subscription-usage';
 
 const colors: CustomFooterColors = {
   directory: '#112233',
   modelName: '#445566',
-  anthropicUsage: '#D97706',
-  codexUsage: '#10B981',
 };
 
 const config = {
@@ -34,6 +33,7 @@ type ComponentOptions = {
   provider?: string;
   oauth?: boolean;
   isSubscription?: boolean;
+  usageCache?: SubscriptionUsageCache;
 };
 
 function createComponent(options: ComponentOptions = {}): CustomFooterComponent {
@@ -77,15 +77,13 @@ function createComponent(options: ComponentOptions = {}): CustomFooterComponent 
       getCustomFooter: () => resolvedConfig,
     },
     agentDisplayState,
-    getThinkingLevel: () => 'off',
+    usageCache: options.usageCache ?? new SubscriptionUsageCache(),    getThinkingLevel: () => 'off',
   } as never);
 }
 
 function withoutOptionalColors(agentName?: string): CustomFooterColors {
   return {
     agentName,
-    anthropicUsage: '#D97706',
-    codexUsage: '#10B981',
   };
 }
 
@@ -121,6 +119,44 @@ describe('CustomFooterComponent styling', () => {
   test('does not show subscription for OAuth providers without subscription auth', () => {
     const [, statsLine] = createComponent({ oauth: true }).render(200);
     expect(statsLine).not.toContain('(sub)');
+  });
+
+  test('hides usage on expired and shows the soonest reset on ok', async () => {
+    dye.setEnabled(false);
+    let result: UsageResult = { status: 'ok', label: 'Claude', windows: [
+      { label: 'Week', usedPercent: 80, resetAt: new Date(100000) },
+      { label: '5h', usedPercent: 25, resetAt: new Date(50000) },
+    ] };
+    const usageCache = new SubscriptionUsageCache({ api: { fetchUsage: async () => result }, now: () => 0 });
+    usageCache.refresh('anthropic');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const component = createComponent({ provider: 'anthropic', oauth: true, isSubscription: true, usageCache });
+    expect(component.render(200)[1]).toContain('Claude 5h');
+    expect(component.render(200)[1]).not.toContain('Week');
+    for (const status of ['network', 'http-error', 'unavailable', 'no-auth', 'expired'] as const) {
+      result = status === 'http-error' ? { status, label: 'Claude', httpStatus: 500 } : { status, label: 'Claude' };
+      usageCache.refresh('anthropic');
+      await new Promise(resolve => setTimeout(resolve, 0));
+      const statsLine = component.render(200)[1];
+      if (status === 'no-auth' || status === 'expired') expect(statsLine).not.toContain('Claude');
+      else {
+        expect(statsLine).toContain('Claude 5h');
+        expect(statsLine).not.toContain('Week');
+      }
+    }
+    component.dispose();
+  });
+
+  test('hides temporary failures without earlier successful windows', async () => {
+    for (const status of ['network', 'http-error', 'unavailable'] as const) {
+      const result: UsageResult = status === 'http-error' ? { status, label: 'Claude', httpStatus: 500 } : { status, label: 'Claude' };
+      const usageCache = new SubscriptionUsageCache({ api: { fetchUsage: async () => result }, now: () => 0 });
+      usageCache.refresh('anthropic');
+      await new Promise(resolve => setTimeout(resolve, 0));
+      const component = createComponent({ provider: 'anthropic', oauth: true, isSubscription: true, usageCache });
+      expect(component.render(200)[1]).not.toContain('Claude');
+      component.dispose();
+    }
   });
 
   test('always shows subscription for kimi-coding', () => {

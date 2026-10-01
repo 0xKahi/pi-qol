@@ -1,10 +1,11 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { TUI } from '@earendil-works/pi-tui';
 import type { ConfigLoader } from '../../config-loader';
+import type { SubscriptionProvider, SubscriptionUsageCache } from '../../libs/subscription-usage';
 import type { Config } from '../../schemas/config.schema';
 import type { AgentDisplayState } from './agent-display-state';
 
-export type SupportedProvider = 'anthropic' | 'openai-codex';
+export type SupportedProvider = SubscriptionProvider;
 
 export type CustomFooterConfig = Config['custom_footer'];
 export type CustomFooterColors = CustomFooterConfig['colors'];
@@ -29,6 +30,7 @@ export type CustomFooterComponentDeps = {
   ctx: ExtensionContext;
   config: ConfigLoader;
   agentDisplayState: AgentDisplayState;
+  usageCache: SubscriptionUsageCache;
   getThinkingLevel: () => string;
 };
 

@@ -4,6 +4,7 @@ import type { ConfigLoader } from '../../src/config-loader';
 import { SET_AGENT_NAME_EVENT_ID } from '../../src/constants';
 import { registerCustomFooter } from '../../src/extensions/custom-footer';
 import type { CustomFooterComponent } from '../../src/extensions/custom-footer/footer-component';
+import { SubscriptionUsageCache } from '../../src/libs/subscription-usage';
 
  type Handler = (...args: any[]) => any;
 
@@ -20,7 +21,7 @@ function harness() {
     isEnabled: () => true,
     getCustomFooter: () => ({ defaultAgentName }),
   } as unknown as ConfigLoader;
-  registerCustomFooter(pi, { config });
+  registerCustomFooter(pi, { config, usageCache: new SubscriptionUsageCache() });
   return { handlers, eventHandlers, setDefaultAgentName: (name: string) => (defaultAgentName = name) };
 }
 

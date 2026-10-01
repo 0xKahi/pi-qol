@@ -155,10 +155,7 @@
     "custom_footer": {
       "default": {
         "enabled": false,
-        "colors": {
-          "anthropicUsage": "#D97706",
-          "codexUsage": "#10B981"
-        },
+        "colors": {},
         "icons": {
           "directory": " ",
           "refresh": "",
@@ -180,10 +177,7 @@
           "type": "boolean"
         },
         "colors": {
-          "default": {
-            "anthropicUsage": "#D97706",
-            "codexUsage": "#10B981"
-          },
+          "default": {},
           "type": "object",
           "properties": {
             "directory": {
@@ -195,16 +189,6 @@
               "pattern": "^#[0-9a-fA-F]{6}$"
             },
             "agentName": {
-              "type": "string",
-              "pattern": "^#[0-9a-fA-F]{6}$"
-            },
-            "anthropicUsage": {
-              "default": "#D97706",
-              "type": "string",
-              "pattern": "^#[0-9a-fA-F]{6}$"
-            },
-            "codexUsage": {
-              "default": "#10B981",
               "type": "string",
               "pattern": "^#[0-9a-fA-F]{6}$"
             }

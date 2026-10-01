@@ -5,6 +5,7 @@
  */
 import type { Theme } from '@earendil-works/pi-coding-agent';
 import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
+import { labelWindow } from './label-window';
 import { singleLine } from './text';
 
 const SEPARATOR = '  ';
@@ -18,32 +19,7 @@ export function renderTabStrip(theme: Theme, labels: string[], activeIndex: numb
     return styleLabels(theme, labels, activeIndex, 0, labels.length - 1, false, false);
   }
 
-  let start = activeIndex;
-  let end = activeIndex;
-  let expandLeft = true;
-  while (true) {
-    const nextStart = expandLeft && start > 0 ? start - 1 : start;
-    const nextEnd = !expandLeft && end < labels.length - 1 ? end + 1 : end;
-    expandLeft = !expandLeft;
-
-    if (nextStart === start && nextEnd === end) {
-      if ((start === 0 || nextStart === start) && (end === labels.length - 1 || nextEnd === end)) break;
-      continue;
-    }
-
-    const candidate = plainViewport(labels, nextStart, nextEnd);
-    if (visibleWidth(candidate) <= safeWidth) {
-      start = nextStart;
-      end = nextEnd;
-      continue;
-    }
-
-    const otherStart = start > 0 ? start - 1 : start;
-    const otherEnd = end < labels.length - 1 ? end + 1 : end;
-    if ((otherStart === start && otherEnd === end) || visibleWidth(plainViewport(labels, otherStart, otherEnd)) > safeWidth) break;
-    start = otherStart;
-    end = otherEnd;
-  }
+  const { start, end } = labelWindow(labels, activeIndex, safeWidth, SEPARATOR);
 
   const leftOmitted = start > 0;
   const rightOmitted = end < labels.length - 1;

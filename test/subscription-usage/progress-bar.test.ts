@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { EMPTY_BAR_ICON, FILLED_BAR_ICON } from '../../src/extensions/custom-footer/constants';
-import { clampPercent, renderProgressBar } from '../../src/extensions/custom-footer/progress-bar';
+import { clampPercent, renderProgressBar } from '../../src/libs/subscription-usage';
+const EMPTY_BAR_ICON = '░';
+const FILLED_BAR_ICON = '█';
 
 describe('custom-footer progress bar', () => {
   test('clamps percentages', () => {
@@ -22,5 +23,6 @@ describe('custom-footer progress bar', () => {
     expect(renderProgressBar(1000, 4)).toEqual({ filled: FILLED_BAR_ICON.repeat(4), empty: '' });
     expect(renderProgressBar(50, 0)).toEqual({ filled: '', empty: '' });
     expect(renderProgressBar(50, -5)).toEqual({ filled: '', empty: '' });
+    expect(renderProgressBar(50, 4, { filled: '+', empty: '-' })).toEqual({ filled: '++', empty: '--' });
   });
 });

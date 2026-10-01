@@ -1,21 +1,13 @@
 import { RawDataParser } from '../../../utils/raw-data-parser.util';
-import {
-  type ProviderAuth,
-  type RateWindow,
-  SUBSCRIPTION_USAGE_FETCH_TIMEOUT_MS,
-  type SubscriptionUsageStrategy,
-} from '../subscription-usage-api.util';
+import type { ProviderAuth, RateWindow, SubscriptionUsageStrategy } from '../subscription-usage-api.util';
 
 export class AnthropicOauthUsageStrategy implements SubscriptionUsageStrategy {
   readonly provider = 'anthropic';
   readonly label = 'Claude';
 
-  async fetchUsage(auth: ProviderAuth) {
-    const response = await fetch(this.request(auth));
-    if (!response.ok) return;
-
-    const data = RawDataParser.asRecord(await response.json());
-    if (!data) return;
+  parse(json: unknown): RateWindow[] {
+    const data = RawDataParser.asRecord(json);
+    if (!data) return [];
 
     const windows: RateWindow[] = [];
     for (const [key, label] of [
@@ -30,16 +22,16 @@ export class AnthropicOauthUsageStrategy implements SubscriptionUsageStrategy {
       windows.push({
         label,
         usedPercent,
+        windowSeconds: key === 'five_hour' ? 18000 : 604800,
         resetAt: resetDate && Number.isFinite(resetDate.getTime()) ? resetDate : undefined,
       });
     }
-    return windows.length > 0 ? windows : undefined;
+    return windows;
   }
 
-  private request(opts: ProviderAuth) {
+  request(opts: ProviderAuth): Request {
     return new Request('https://api.anthropic.com/api/oauth/usage', {
       method: 'GET',
-      signal: AbortSignal.timeout(SUBSCRIPTION_USAGE_FETCH_TIMEOUT_MS),
       headers: {
         Authorization: `Bearer ${opts.token}`,
         'anthropic-beta': 'oauth-2025-04-20',

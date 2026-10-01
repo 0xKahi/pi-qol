@@ -69,6 +69,48 @@ Three interfaces cover all content:
 - **`ModalLayer`** — full-content overlay above a tab (usually the pre-built `PreviewLayer`). Each tab has its **own** layer stack: Tab-switching works while a layer is open, and each tab restores its layer when you return.
 - **`NavigationScheme`** — pure key→action mapper. Default: `PiKeybindingsScheme` (follows the user's `tui.select.*` remappings). Alternative: `VimNavigationScheme` (`j/k`, `Ctrl+u/d`, `gg/G`, `q`) for read-only inspectors.
 
+## Sections
+
+```
+Modal (frame + section rule)
+  > Section (retained embedded ModalDialog, scheme, filter, hints)
+    > Tab (selection, scroll, content)
+      > Layer (preview stack)
+```
+
+`SectionedModal` owns the frame (`SectionFrame = 'inline' | 'bordered'`);
+build each section dialog with `frame: 'none'`. Consumers owning subscriptions or
+timers should clean them up from both completion and an idempotent `dispose()`
+method, which Pi calls when the component closes.
+Wire every dialog's `onComplete` to the same host `done` callback and choose its
+`cancelValue`. Section state survives switches, and natural height follows the
+active section. `onActivate` runs once per section, including the initial section.
+
+Input routing: `Ctrl+]` goes forward and disambiguated `Ctrl+[` goes backward
+(both wrap); all other input goes to the active dialog. Bare Esc always dismisses
+through that dialog (layers close first). In non-Kitty terminals, `Ctrl+[` is Esc.
+Tab/Shift+Tab stay inside the section. Switching clears pending navigation chords.
+Only the active dialog receives focus. Multiple sections add a footer hint.
+
+```ts
+await presentModal(ctx.ui, layout, (tui, theme, keybindings, done, frame) => {
+  const picker = new ModalDialog(tui, theme, keybindings, {
+    tabs: pickerTabs, frame: 'none', filter: {},
+    cancelValue: null, onComplete: done,
+  });
+  const usage = new ModalDialog(tui, theme, keybindings, {
+    tabs: usageTabs, frame: 'none', navigation: new VimNavigationScheme(),
+    cancelValue: null, onComplete: done,
+  });
+  return new SectionedModal(tui, theme, {
+    frame, sections: [
+      { label: 'Select', dialog: picker },
+      { label: 'Usage', dialog: usage, onActivate: loadUsage },
+    ],
+  });
+});
+```
+
 ## Recipes
 
 ### Filterable picker (model-select style)
@@ -191,7 +233,7 @@ await presentModal(ctx.ui, layout, (tui, theme, keybindings, done, frame) =>
 | --- | --- | --- | --- |
 | `tabs` | `ModalTab[]` | required | ≥1 tab; first is active unless `initialTabIndex` |
 | `navigation` | `NavigationScheme` | `PiKeybindingsScheme` | key→action mapping |
-| `frame` | `'inline' \| 'bordered'` | `'inline'` | rules vs rounded border |
+| `frame` | `'inline' \| 'bordered' \| 'none'` | `'inline'` | rules, rounded border, or embedded content |
 | `height` | `'auto' \| 'half'` | `'auto'` | bound to half terminal |
 | `title` | `string \| () => string` | — | line above the tab strip |
 | `notices` | `string[] \| () => string[]` | — | `⚠` warning lines below the strip |
@@ -199,7 +241,9 @@ await presentModal(ctx.ui, layout, (tui, theme, keybindings, done, frame) =>
 | `filter` | `{ initialQuery? }` | — | shared text input; calls `tab.applyFilter` |
 | `cancelValue` / `onComplete` | `TResult` / callback | required | dismissal result + sink |
 
-Methods: `complete(result)`, `handleInput(data)`, `render(width)`, `invalidate()`, `focused`, `activeTab`, `activeIndex`.
+`extraHints?: Hint[] | (() => Hint[])` inserts footer hints before Esc.
+
+Methods: `complete(result)`, `setExtraHints(hints)`, `resetNavigation()`, `handleInput(data)`, `render(width)`, `invalidate()`, `focused`, `activeTab`, `activeIndex`.
 
 ### `ListTab<T>` options
 

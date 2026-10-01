@@ -34,7 +34,7 @@ This directory defines the Zod-based configuration schemas for the `pi-qol` plug
     - `layout: 'inline' | 'overlay'` (default `'inline'`)
   - `CustomFooterConfigSchema` contains:
     - `enabled: boolean`
-    - `colors: { directory?, modelName?, anthropicUsage?: '#D97706', codexUsage?: '#10B981' }`
+    - `colors: { directory?, modelName?, agentName? }`; subscription usage colors are fixed in the usage library, not configurable. Full and partial Zod objects strip former usage-color keys without validation errors.
     - `icons: { directory?: '  ', refresh?: ' ', cache?: ' ', cacheRead?: ' ', cacheWrite?: ' ' }`
     - `display: { tokens?: true, cache?: true }`
   - `ContextViewConfigSchema` contains `enabled: boolean` and `layout: 'inline' | 'overlay'`.

@@ -8,7 +8,7 @@ import {
   calculateUsageTotals,
   formatTokens,
 } from '../../src/extensions/custom-footer/token-stats';
-import type { CustomFooterColors, CustomFooterIcons, FooterTheme, UsageTotals } from '../../src/extensions/custom-footer/types';
+import type { CustomFooterIcons, FooterTheme, UsageTotals } from '../../src/extensions/custom-footer/types';
 
 const identityTheme: FooterTheme = {
   fg: (_color, text) => text,
@@ -24,11 +24,6 @@ const icons: CustomFooterIcons = {
   cache: 'C ',
   cacheRead: 'R ',
   cacheWrite: 'W ',
-};
-
-const colors: CustomFooterColors = {
-  anthropicUsage: '#D97706',
-  codexUsage: '#10B981',
 };
 
 function context(percent: number | null, contextWindow = 128_000): ContextUsage {
@@ -236,7 +231,6 @@ describe('custom-footer token stats', () => {
     dye.setEnabled(true);
 
     const segment = buildSubscriptionUsageSegment({
-      colors,
       icons,
       theme: identityTheme,
       usage: {
@@ -256,7 +250,6 @@ describe('custom-footer token stats', () => {
     dye.setEnabled(true);
 
     const segment = buildSubscriptionUsageSegment({
-      colors,
       icons,
       theme: identityTheme,
       usage: {
@@ -267,6 +260,7 @@ describe('custom-footer token stats', () => {
       },
     });
 
+    expect(segment).toContain('\x1b[38;2;16;185;129m');
     expect(dye.strip(segment)).toBe(`Codex Week ${FILLED_BAR_ICON.repeat(10)} 100%`);
   });
 
@@ -274,7 +268,6 @@ describe('custom-footer token stats', () => {
     dye.setEnabled(false);
 
     const segment = buildSubscriptionUsageSegment({
-      colors,
       icons,
       theme: identityTheme,
       usage: {
