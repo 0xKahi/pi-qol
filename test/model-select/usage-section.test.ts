@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { dye } from '@0xkahi/cli-dye';
 import type { KeybindingsManager, Theme } from '@earendil-works/pi-coding-agent';
 import { createUsageSection } from '../../src/extensions/model-select/usage-section';
@@ -6,6 +6,8 @@ import { UsageProviderTab } from '../../src/extensions/model-select/usage-sectio
 import { SubscriptionUsageCache, type UsageCacheEntry, type UsageResult } from '../../src/libs/subscription-usage';
 
 const now = 1_800_000_000_000;
+// Plain-text assertions must not depend on the host terminal's color support; color tests opt in explicitly.
+beforeEach(() => dye.setEnabled(false));
 afterEach(() => dye.setEnabled(undefined));
 const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as Theme;
 const keys = { matches: () => false } as unknown as KeybindingsManager;

@@ -23,11 +23,15 @@ extension (see the `pi.extensions` field in `package.json`).
 ### `auto_session_name`
 
 Automatically generates a short, human-readable title for a brand-new session from
-its first user message, using a cheap model call that runs in the background and
-never blocks your turn.
+its first user prompt or whitelisted custom message, using a cheap model call that
+runs in the background and never blocks your turn (Pi >=1.2).
 
 - **Non-blocking** — titles are generated asynchronously while the agent responds.
-- **Fires once, early** — only on the very first real user turn of a session.
+- **Fires once, early** — only until the session branch contains a user message
+  or whitelisted custom message with text (image-only/blank messages don't count).
+- **Custom triggers** — opt in to custom message types with
+  `custom_message_whitelist`; only messages sent with `triggerTurn: true` can
+  trigger naming. The default empty list allows only user prompts.
 - **Smart guards** — skips sessions that already have a name, forked/child
   sessions, and empty prompts.
 - **Model-flexible** — use a configured cheap model, or fall back to the active
@@ -100,6 +104,7 @@ them (project overrides global):
   "$schema": "https://raw.githubusercontent.com/0xKahi/pi-qol/main/assets/config.schema.json",
   "auto_session_name": {
     "enabled": true,
+    "custom_message_whitelist": [],
     "model": {
       "provider": "opencode",
       "modelId": "gpt-5-nano",
@@ -146,10 +151,11 @@ them (project overrides global):
 
 #### `auto_session_name`
 
-| Key       | Type      | Default | Description                                                        |
-| --------- | --------- | ------- | ------------------------------------------------------------------ |
-| `enabled` | `boolean` | `false` | Turn the auto session naming feature on.                           |
-| `model`   | `object`  | —       | Optional model used to generate titles. Falls back to the session model if omitted. |
+| Key                        | Type       | Default | Description                                                                                                       |
+| -------------------------- | ---------- | ------- | ----------------------------------------------------------------------------------------------------------------- |
+| `enabled`                  | `boolean`  | `false` | Turn the auto session naming feature on.                                                                          |
+| `custom_message_whitelist` | `string[]` | `[]`    | Allowed `customType` values for `pi.sendMessage(..., { triggerTurn: true })` runs. Empty means only user prompts. |
+| `model`                    | `object`   | —       | Optional model used to generate titles. Falls back to the session model if omitted.                               |
 
 
 #### `model`
@@ -250,10 +256,17 @@ On `before_agent_start`, the `auto_session_name` extension checks a series of
 guards before doing any work. It only proceeds when **all** of the following hold:
 
 1. The feature is enabled in config.
-2. The session does not already have a name.
-3. The session is not a fork/child session.
-4. It is the user's first turn.
-5. The user prompt is non-empty.
+2. The run starts with a non-empty user prompt, or a custom message whose
+   `customType` is in `custom_message_whitelist` and whose text is non-empty
+   (image blocks are ignored).
+3. The session does not already have a name and is not a fork/child session.
+4. The branch has no prior user messages or whitelisted custom messages with
+   non-whitespace text. Blank or image-only messages are ignored, using the same
+   text rule as step 2, so they never block a later message from naming the session.
+
+Pi >=1.2 emits this event for both user and custom runs, before appending the
+starting message to the branch. Non-whitelisted custom runs are skipped before
+session guards and their messages do not block later naming.
 
 If those pass, it resolves a model, generates a title via a dedicated
 title-generation prompt, cleans the result, and persists it with

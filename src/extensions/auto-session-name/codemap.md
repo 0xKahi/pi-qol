@@ -2,7 +2,7 @@
 
 ## Responsibility
 
-Generate and apply a short, descriptive name for a Pi session based on the user's first user turn. The extension runs once per session, only on the user's first turn, and only when no session name has already been set and the session is not a child/fork. Generated titles are applied through the normal Pi session name API (`setSessionName`) so they appear in the UI and persist with the session.
+Generate and apply a short, descriptive name from the first eligible user prompt or whitelisted custom-message run (Pi >=1.2). The branch must have no prior non-empty user messages or whitelisted custom messages, no session name may already be set, and the session must not be a child/fork. Generated titles are applied through the normal Pi session name API (`setSessionName`) so they appear in the UI and persist with the session.
 
 ## Design Patterns
 
@@ -21,8 +21,8 @@ Generate and apply a short, descriptive name for a Pi session based on the user'
    - `auto_session_name` is enabled in config.
    - No session name is currently set (`getSessionName() !== undefined`).
    - The session is not a child/fork (`startReason !== 'fork'` and no `parentSession` header).
-   - This is the user's first turn (zero prior user messages in the branch).
-   - The current user prompt is non-empty.
+   - `resolveNamingText` accepts a non-empty user prompt or custom message with a `customType` in `custom_message_whitelist`, extracting text and ignoring images. Ineligible runs return before session guards.
+   - `isFirstNamingTurn` finds no prior user or whitelisted custom messages with text in the branch (same `hasNamingText` rule as `resolveNamingText`, so blank/image-only entries never block naming). Pi emits the event before appending the starting message for both run types.
 3. **Cancellation of stale request**: Any existing `titleController` is aborted and replaced with a fresh `AbortController` for this request.
 4. **Model resolution**: `ModelResolver` resolves the configured title model (or the default fallback) into a concrete `ResolvedModel` (model, API key, headers, reasoning preference). Errors are surfaced via `ctx.ui.notify`.
 5. **Title generation**: `AutoSessionNameTitleGenerator.generateAndApplyTitle` sends a single-turn completion to the LLM using the context from `buildTitleContext`. The call carries `maxRetries`, `maxTokens`, and the abort signal.
@@ -37,10 +37,10 @@ Generate and apply a short, descriptive name for a Pi session based on the user'
   - Events: `session_start`, `session_shutdown`, `before_agent_start`.
   - Methods: `getSessionName`, `setSessionName`.
 - **Pi Context/session manager** (`ctx.sessionManager`):
-  - `getBranch()` and `getHeader()` are used to detect the first user turn and child sessions.
+  - `getBranch()` and `getHeader()` are used to detect the first eligible naming turn and child sessions.
 - **ConfigLoader** (`../../config-loader`):
   - `isEnabled('auto_session_name')` toggles the feature.
-  - `getAutoSessionName()` supplies the optional per-feature model override.
+  - `getAutoSessionName()` supplies the optional per-feature model override and custom message whitelist (empty by default).
 - **ModelResolver** (`../../utils/model-resolver.util`):
   - Resolves the configured model string into a full `ResolvedModel` usable by `pi-ai`.
 - **pi-ai compat** (`@earendil-works/pi-ai/compat`):
