@@ -10,7 +10,8 @@
     },
     "auto_session_name": {
       "default": {
-        "enabled": false
+        "enabled": false,
+        "custom_message_whitelist": []
       },
       "type": "object",
       "properties": {
@@ -44,6 +45,14 @@
             "modelId",
             "reasoning"
           ]
+        },
+        "custom_message_whitelist": {
+          "default": [],
+          "description": "customType values of pi custom messages (sent with triggerTurn) that may trigger auto session naming. Empty = only user prompts.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },

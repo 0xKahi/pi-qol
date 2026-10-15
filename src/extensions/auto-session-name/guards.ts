@@ -1,4 +1,5 @@
 import type { ExtensionAPI, SessionEntry, SessionHeader } from '@earendil-works/pi-coding-agent';
+import { hasNamingText } from './naming-text';
 
 type SessionManagerForGuards = {
   getBranch(): SessionEntry[];
@@ -14,25 +15,15 @@ export class AutoSessionNameGuard {
     return sessionOpts.startReason === 'fork' || Boolean(sessionOpts.manager.getHeader()?.parentSession);
   }
 
-  static isUsersFirstTurn(sessionManager: Pick<SessionManagerForGuards, 'getBranch'>): boolean {
-    // Pi emits before_agent_start before appending the current user message, so a fresh opening turn has zero prior user messages.
-    const userMsgs = sessionManager.getBranch().filter(AutoSessionNameGuard.userEntryFilter);
-    return userMsgs.length === 0;
+  static isFirstNamingTurn(sessionManager: Pick<SessionManagerForGuards, 'getBranch'>, whitelist: ReadonlySet<string>): boolean {
+    // Pi emits before_agent_start before appending the starting message (user or custom).
+    // Only prior entries that could themselves have produced a name block naming.
+    return !sessionManager.getBranch().some(entry => AutoSessionNameGuard.isNamingEntry(entry, whitelist));
   }
 
-  static isFirstCustomExtensionMessage(sessionManager: Pick<SessionManagerForGuards, 'getBranch'>, whitelist: Set<string>): boolean {
-    const customMsg = sessionManager.getBranch().filter(entry => entry.type === 'custom_message' && whitelist.has(entry.customType));
-    return customMsg.length === 0;
-  }
-
-  private static userEntryFilter(entry: SessionEntry) {
-    if (entry.type !== 'message') return false;
-    if (entry.message.role !== 'user') return false;
-    const { content } = entry.message;
-    if (typeof content === 'string') return content !== '';
-    if (content.length === 0) return false;
-    const onlyContent = content.length === 1 ? content[0] : undefined;
-    if (onlyContent?.type === 'text' && onlyContent.text === '') return false;
-    return true;
+  private static isNamingEntry(entry: SessionEntry, whitelist: ReadonlySet<string>): boolean {
+    if (entry.type === 'message') return entry.message.role === 'user' && hasNamingText(entry.message.content);
+    if (entry.type === 'custom_message') return whitelist.has(entry.customType) && hasNamingText(entry.content);
+    return false;
   }
 }
