@@ -160,7 +160,7 @@ export class CustomFooterComponent implements Component {
   }
 
   private isUsingSubscription(model: NonNullable<CustomFooterComponentDeps['ctx']['model']>): boolean {
-    if (model.provider === 'kimi-coding') return true;
+    if (model.provider === 'kimi-coding' || model.provider === 'opencode-go') return true;
 
     return (
       this.deps.ctx.modelRegistry.isUsingOAuth(model) && this.deps.ctx.modelRegistry.getProvider(model.provider)?.auth?.oauth?.isSubscription === true

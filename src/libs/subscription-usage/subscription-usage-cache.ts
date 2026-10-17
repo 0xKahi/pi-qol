@@ -1,19 +1,29 @@
 import { formatResetDescription } from './pace';
 import { AnthropicOauthUsageStrategy } from './strategy/anthropic-oauth-usage.strategy';
 import { OpenAiCodexUsageStrategy } from './strategy/openai-codex-usage.strategy';
+import { OpenCodeGoUsageStrategy } from './strategy/opencode-go-usage.strategy';
 import {
   type RateWindow,
   SUBSCRIPTION_USAGE_TTL_MS,
   type SubscriptionProvider,
   SubscriptionUsageApi,
   type SubscriptionUsageApiLike,
+  type SubscriptionUsageStrategy,
   type UsageResult,
 } from './subscription-usage-api.util';
+
+const STRATEGIES: Record<SubscriptionProvider, SubscriptionUsageStrategy> = {
+  anthropic: new AnthropicOauthUsageStrategy(),
+  'openai-codex': new OpenAiCodexUsageStrategy(),
+  'opencode-go': new OpenCodeGoUsageStrategy(),
+};
 
 export type UsageCacheEntry = { result?: UsageResult; lastSuccess?: { windows: RateWindow[]; fetchedAt: number }; inFlight: boolean };
 
 export function resolveSupportedProvider(provider?: string): SubscriptionProvider | undefined {
   switch (provider?.toLowerCase()) {
+    case 'opencode-go':
+      return 'opencode-go';
     case 'anthropic':
       return 'anthropic';
     case 'openai-codex':
@@ -64,7 +74,7 @@ export class SubscriptionUsageCache {
     const entry: UsageCacheEntry = { ...this.get(provider), inFlight: true };
     this.entries.set(provider, entry);
     this.lastAttemptAt.set(provider, this.now());
-    const strategy = provider === 'anthropic' ? new AnthropicOauthUsageStrategy() : new OpenAiCodexUsageStrategy();
+    const strategy = STRATEGIES[provider];
     void Promise.resolve()
       .then(() => this.api.fetchUsage(strategy))
       .catch((): UsageResult => ({ status: 'network', label: strategy.label }))

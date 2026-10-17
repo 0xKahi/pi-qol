@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from 'bun:test';
-import { AnthropicOauthUsageStrategy, SubscriptionUsageApi } from '../../src/libs/subscription-usage';
+import { AnthropicOauthUsageStrategy, OpenCodeGoUsageStrategy, SubscriptionUsageApi } from '../../src/libs/subscription-usage';
 
 const strategy = new AnthropicOauthUsageStrategy();
 test('no credentials makes no request', async () => {
@@ -59,4 +59,11 @@ test('empty response is unavailable and valid response is ok with host auth', as
   expect((await api.fetchUsage(strategy)).status).toBe('ok');
   const empty = new SubscriptionUsageApi(async () => ({ token: 'token' }), async () => Response.json({}));
   expect(await empty.fetchUsage(strategy)).toEqual({ status: 'unavailable', label: 'Claude' });
+});
+
+test('GO without access or usable meters is unavailable', async () => {
+  for (const json of [{}, { access: {} }, { access: { meters: {} } }]) {
+    const api = new SubscriptionUsageApi(async () => ({ token: 'go-key' }), async () => Response.json(json));
+    expect(await api.fetchUsage(new OpenCodeGoUsageStrategy())).toEqual({ status: 'unavailable', label: 'OC-GO' });
+  }
 });

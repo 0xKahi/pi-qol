@@ -86,7 +86,7 @@ describe('model-select dialog', () => {
     dialog.handleInput('\x1d');
     expect(dialog.activeSectionIndex).toBe(1);
     await Bun.sleep(0);
-    expect(calls).toEqual(['anthropic', 'openai-codex']);
+    expect(calls).toEqual(['anthropic', 'openai-codex', 'opencode-go']);
     dialog.handleInput('\x1d');
     expect(dialog.render(120).join('\n')).toContain('claude');
     dialog.handleInput('enter');

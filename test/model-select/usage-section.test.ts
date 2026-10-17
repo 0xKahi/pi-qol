@@ -73,6 +73,8 @@ describe('UsageProviderTab', () => {
     expect(calls).toContain(`dim:${'░'.repeat(5)}`);
     const codex = new UsageProviderTab(theme, cached(entry), 'openai-codex', 'Codex', () => now);
     expect(codex.render(160, undefined)[0]).toContain(dye.colorize('Codex', { fg: dye.hex('#10B981') }));
+    const go = new UsageProviderTab(theme, cached(entry), 'opencode-go', 'OC-GO', () => now);
+    expect(go.render(160, undefined)[0]).toContain(dye.colorize('OC-GO', { fg: dye.hex('#00ADD8') }));
     dye.setEnabled(false);
     expect(new UsageProviderTab(theme, cached(entry), 'anthropic', 'Claude', () => now).render(160, undefined).join('\n')).not.toContain('\x1b');
   });
@@ -155,16 +157,17 @@ describe('UsageProviderTab', () => {
 });
 
 test('provider preselection and provider tab cycling, with no filter and q dismissal', () => {
-  for (const [provider, index] of [['openai-codex', 1], ['unsupported', 0]] as const) {
+  for (const [provider, index] of [['openai-codex', 1], ['opencode-go', 2], ['unsupported', 0]] as const) {
     const results: unknown[] = [];
     const section = createUsageSection(tui as never, theme, keys, { cache: cached(), currentProvider: provider, onDone: result => results.push(result) });
     expect(section.dialog.activeIndex).toBe(index);
-    expect(section.dialog.activeTab.label).toBe(index === 1 ? '[Codex]' : '[Claude]');
+    expect(section.dialog.activeTab.label).toBe(['[Claude]', '[Codex]', '[OC-GO]'][index]!);
     expect(section.dialog.render(100)[0]).toContain('[Claude]');
     expect(section.dialog.render(100)[0]).toContain('[Codex]');
+    expect(section.dialog.render(100)[0]).toMatch(/\[Claude\].*\[Codex\].*\[OC-GO\]/);
     expect(section.dialog.render(100).join('\n')).not.toContain('Filter:');
     section.dialog.handleInput('\t');
-    expect(section.dialog.activeIndex).toBe(1 - index);
+    expect(section.dialog.activeIndex).toBe((index + 1) % 3);
     section.dialog.handleInput('\x1b[Z');
     expect(section.dialog.activeIndex).toBe(index);
     section.dialog.handleInput('q');
@@ -179,17 +182,17 @@ test('activation reuses TTL cache and raw r forces only the active provider refr
   expect(calls).toEqual([]);
   section.onActivate?.();
   await Bun.sleep(0);
-  expect(calls).toEqual(['anthropic', 'openai-codex']);
+  expect(calls).toEqual(['anthropic', 'openai-codex', 'opencode-go']);
   section.onActivate?.();
   await Bun.sleep(0);
-  expect(calls.length).toBe(2);
+  expect(calls.length).toBe(3);
   section.dialog.handleInput('r');
   const refreshing = section.dialog.render(160).join('\n');
   expect(refreshing).toContain('refreshing…');
   expect(refreshing).toContain('48%');
   expect(refreshing).toContain('81%');
   await Bun.sleep(0);
-  expect(calls).toEqual(['anthropic', 'openai-codex', 'anthropic']);
+  expect(calls).toEqual(['anthropic', 'openai-codex', 'opencode-go', 'anthropic']);
   expect(section.dialog.render(160).join('\n')).toContain('updated 0s ago');
   expect(section.dialog.render(160).join('\n')).not.toContain('refreshing…');
 });
