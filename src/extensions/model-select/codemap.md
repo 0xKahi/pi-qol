@@ -18,7 +18,7 @@ This extension implements the `/select-model` command and its interactive picker
   - `usage-section/`: [usage section map](usage-section/codemap.md); Claude/Codex provider tabs, explicit status and freshness, all window rows with progress/reset/pace, retained Vim row navigation, and `r` refresh.
   - `constants.ts`: command name, cross-extension event ID, and dialog rendering limits.
   - `types.ts`: shared item, list, tab, and dialog option types.
-- **Modal library delegation**: `ModelSelectModal` extends `SectionedModal` from `src/libs/modal/`, containing retained embedded dialogs; Ctrl+] and disambiguated Ctrl+[ wrap sections, bare Esc stays dismissal, and Tab stays inside the active section. Each dialog shell owns the tab strip, tab cycling, keybinding-driven navigation (wrap-around selection via `ListTab`), the shared filter `Input`, and the help footer.
+- **Modal library delegation**: `ModelSelectModal` extends `SectionedModal` from `src/libs/modal/`, containing retained embedded dialogs; Ctrl+L and disambiguated Ctrl+H wrap sections, bare Esc stays dismissal, and Tab stays inside the active section. Each dialog shell owns the tab strip, tab cycling, keybinding-driven navigation (wrap-around selection via `ListTab`), the shared filter `Input`, and the help footer.
 - **Layout-aware presentation**: `showModelSelector` passes `model_select.layout` to the shared modal presenter, which coordinates the dialog's inline/bordered frame with normal or centered overlay mounting.
 - **Defensive guards**: checks feature enablement, UI availability, idle state (`waitForIdle`), exact-match short-circuit, and auth availability before applying a model.
 

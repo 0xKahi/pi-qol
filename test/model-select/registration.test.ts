@@ -33,7 +33,7 @@ test('vim event and command mount the same sectioned modal; disabled events do n
         opened.push(modal);
         expect(modal.activeSectionIndex).toBe(0);
         expect(modal.render(120)[0]).toContain('Usage');
-        modal.handleInput('\x1d');
+        modal.handleInput('\x0c');
         modal.handleInput('q');
         return result;
       },

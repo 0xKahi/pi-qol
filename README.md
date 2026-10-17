@@ -48,9 +48,10 @@ Favourites, ordered custom group tabs, provider filtering, and inline or overlay
 - **shared filtering** across Favourites, group, and Search tabs
 - **bidirectional tab navigation** with Tab and Shift+Tab
 - **provider filtering** for Search without removing models from favourite tabs
-- **sections**: opens on Select Model; `Ctrl+]` switches to the next section and
-  `Ctrl+[` to the previous (both wrap). Without the Kitty keyboard protocol,
-  `Ctrl+[` acts as Esc instead. Tab/Shift+Tab stay within the active section.
+- **sections**: opens on Select Model; `Ctrl+L` switches to the next section and
+  `Ctrl+H` to the previous (both wrap). `Ctrl+H` needs a terminal that reports it
+  distinctly (Kitty, CSI-u, or modifyOtherKeys); otherwise it acts as Backspace.
+  `Ctrl+L` works everywhere. Tab/Shift+Tab stay within the active section.
 - **Usage**: `[Claude]` `[Codex]` `[OC-GO]` tabs show every subscription rate window,
   separated by blank lines, with a progress bar, used percentage, reset time,
   pace, and data freshness. Fixed provider colors match the custom footer. Missing
