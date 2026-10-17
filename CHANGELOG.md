@@ -1,5 +1,15 @@
 # @0xkahi/pi-qol
 
+## 1.4.0
+
+### Minor Changes
+
+- a5ab758: Add OpenCode Go (`opencode-go`) subscription usage: a new `[OC-GO]` Usage tab in the model selector and an OC-GO footer segment with 5h, Week, and Month windows from the OpenCode Go status API (color `#00ADD8`). OpenCode Go reads an `api_key` entry from `auth.json`, while Claude and Codex still require `oauth` entries. `opencode-go` models now show ` (sub)` in the footer cost. OpenCode Zen (`opencode`) is unchanged.
+
+### Patch Changes
+
+- fdb6b9f: Switch model selector sections with Vim-style keys: `Ctrl+L` moves to the next section and `Ctrl+H` to the previous one, both wrapping. `Ctrl+]` and `Ctrl+[` no longer switch sections. `Ctrl+H` needs a terminal that reports it as its own key (Kitty, CSI-u, or modifyOtherKeys); otherwise it stays Backspace. The section hint now reads `^L/^H Section`.
+
 ## 1.3.0
 
 ### Minor Changes
