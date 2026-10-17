@@ -86,9 +86,10 @@ Wire every dialog's `onComplete` to the same host `done` callback and choose its
 `cancelValue`. Section state survives switches, and natural height follows the
 active section. `onActivate` runs once per section, including the initial section.
 
-Input routing: `Ctrl+]` goes forward and disambiguated `Ctrl+[` goes backward
-(both wrap); all other input goes to the active dialog. Bare Esc always dismisses
-through that dialog (layers close first). In non-Kitty terminals, `Ctrl+[` is Esc.
+Input routing: `Ctrl+L` goes forward and disambiguated `Ctrl+H` goes backward
+(both wrap); all other input goes to the active dialog. A raw `0x08` byte is always
+Backspace for the active dialog, so `Ctrl+H` needs a terminal that reports it
+distinctly. Bare Esc always dismisses through that dialog (layers close first).
 Tab/Shift+Tab stay inside the section. Switching clears pending navigation chords.
 Only the active dialog receives focus. Multiple sections add a footer hint.
 

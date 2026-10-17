@@ -1,13 +1,16 @@
 import { AnthropicOauthUsageStrategy } from './strategy/anthropic-oauth-usage.strategy';
 import { OpenAiCodexUsageStrategy } from './strategy/openai-codex-usage.strategy';
 
+import { OpenCodeGoUsageStrategy } from './strategy/opencode-go-usage.strategy';
+
 export const SUBSCRIPTION_USAGE_FETCH_TIMEOUT_MS = 10_000;
 export const SUBSCRIPTION_USAGE_TTL_MS = 60_000;
 
-export type SubscriptionProvider = 'anthropic' | 'openai-codex';
+export type SubscriptionProvider = 'anthropic' | 'openai-codex' | 'opencode-go';
 export const SUBSCRIPTION_PROVIDERS: readonly { provider: SubscriptionProvider; label: string }[] = [
   { provider: 'anthropic', label: new AnthropicOauthUsageStrategy().label },
   { provider: 'openai-codex', label: new OpenAiCodexUsageStrategy().label },
+  { provider: 'opencode-go', label: new OpenCodeGoUsageStrategy().label },
 ];
 export type ProviderAuth = { token: string; accountId?: string };
 export type CredentialResolver = (provider: SubscriptionProvider) => Promise<ProviderAuth | undefined>;

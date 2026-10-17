@@ -63,10 +63,27 @@ test('default TTL uses the shared lib constant', async () => {
 test('provider aliases and soonest-reset window selection', () => {
   for (const alias of ['openai-codex', 'codex', 'openai', 'chatgpt']) expect(resolveSupportedProvider(alias)).toBe('openai-codex');
   expect(resolveSupportedProvider('anthropic')).toBe('anthropic');
+  expect(resolveSupportedProvider('opencode-go')).toBe('opencode-go');
+  expect(resolveSupportedProvider('opencode')).toBeUndefined();
   expect(resolveSupportedProvider('other')).toBeUndefined();
   expect(resolveSupportedProvider()).toBeUndefined();
   const windows = [{ label: 'Week', usedPercent: 20, resetAt: new Date(1000) }, { label: '5h', usedPercent: 10, resetAt: new Date(500) }];
   expect(pickSubscriptionUsageWindow(windows)).toBe(windows[1]);
   expect(pickSubscriptionUsageWindow([{ label: 'first', usedPercent: 0 }])?.label).toBe('first');
   expect(pickSubscriptionUsageWindow([])).toBeUndefined();
+});
+
+test('cache routes GO fetches to the GO strategy', async () => {
+  const cache = new SubscriptionUsageCache({ api: { fetchUsage: async strategy => {
+    expect(strategy.provider).toBe('opencode-go');
+    expect(strategy.label).toBe('OC-GO');
+    expect(strategy.request({ token: 'key' }).url).toBe('https://opencode.ai/console/api/go/status');
+    return { status: 'ok', label: strategy.label, windows: strategy.parse({ access: { meters: {
+      fiveHour: { limitMicroCents: '100', usedMicroCents: '10', resetsAt: '2026-10-12T05:00:00Z' },
+    } } }) };
+  } } });
+  cache.refresh('opencode-go');
+  await settle();
+  expect(cache.get('opencode-go')?.result?.status).toBe('ok');
+  expect(cache.get('opencode-go')?.lastSuccess?.windows[0]?.usedPercent).toBe(10);
 });

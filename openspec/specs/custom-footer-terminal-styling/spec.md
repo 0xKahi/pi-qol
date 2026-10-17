@@ -7,7 +7,7 @@ Define how the custom footer applies configured terminal truecolor styling while
 ## Requirements
 
 ### Requirement: Configured truecolor styling
-The custom footer SHALL apply each configured custom-footer hex color to its corresponding text using terminal truecolor when color output is enabled. The subscription usage segment SHALL use the fixed per-provider usage color (Claude `#D97706`, Codex `#10B981`) instead of a configured color.
+The custom footer SHALL apply each configured custom-footer hex color to its corresponding text using terminal truecolor when color output is enabled. The subscription usage segment SHALL use the fixed per-provider usage color (Claude `#D97706`, Codex `#10B981`, OpenCode Go `#00ADD8`) instead of a configured color.
 
 #### Scenario: Directory color is configured
 - **WHEN** the custom footer renders a directory with a configured directory color and color output is enabled

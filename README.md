@@ -48,10 +48,11 @@ Favourites, ordered custom group tabs, provider filtering, and inline or overlay
 - **shared filtering** across Favourites, group, and Search tabs
 - **bidirectional tab navigation** with Tab and Shift+Tab
 - **provider filtering** for Search without removing models from favourite tabs
-- **sections**: opens on Select Model; `Ctrl+]` switches to the next section and
-  `Ctrl+[` to the previous (both wrap). Without the Kitty keyboard protocol,
-  `Ctrl+[` acts as Esc instead. Tab/Shift+Tab stay within the active section.
-- **Usage**: `[Claude]` and `[Codex]` tabs show every subscription rate window,
+- **sections**: opens on Select Model; `Ctrl+L` switches to the next section and
+  `Ctrl+H` to the previous (both wrap). `Ctrl+H` needs a terminal that reports it
+  distinctly (Kitty, CSI-u, or modifyOtherKeys); otherwise it acts as Backspace.
+  `Ctrl+L` works everywhere. Tab/Shift+Tab stay within the active section.
+- **Usage**: `[Claude]` `[Codex]` `[OC-GO]` tabs show every subscription rate window,
   separated by blank lines, with a progress bar, used percentage, reset time,
   pace, and data freshness. Fixed provider colors match the custom footer. Missing
   credentials and request failures are shown explicitly. Usage shares the footer
@@ -65,9 +66,13 @@ allow keybindings with [pi-vim-keys](https://github.com/0xKahi/pi-vim-keys) with
 
 Replaces pi's built-in interactive footer with the same three-line layout, but
 shows the current directory as an icon plus basename, supports hex color overrides,
-can hide token/cache clusters, and adds an OAuth subscription-usage progress bar
-for supported providers (Anthropic and OpenAI Codex). Usage colors are fixed:
-Claude `#D97706` and Codex `#10B981`; former usage-color overrides are ignored.
+can hide token/cache clusters, and adds a subscription-usage progress bar
+for supported providers (Anthropic, OpenAI Codex, and OpenCode Go via model provider
+`opencode-go`, not OpenCode Zen `opencode`). Usage colors are fixed: Claude
+`#D97706`, Codex `#10B981`, and OC-GO `#00ADD8`; former usage-color overrides are ignored.
+OpenCode Go shows `5h`, `Week`, and `Month` windows and requires an `opencode-go`
+entry of type `api_key` in `~/.pi/agent/auth.json`, with the secret in `key`;
+`OPENCODE_API_KEY` alone is not used. Claude and Codex require OAuth entries.
 
 - **Directory line** — optional inverse-styled agent badge followed by the
   directory icon + basename, with optional git branch and session name. The badge
@@ -77,7 +82,7 @@ Claude `#D97706` and Codex `#10B981`; former usage-color overrides are ignored.
   right-aligned model name (with provider prefix when multiple providers are
   available).
 - **Subscription usage** — a colored progress bar plus percentage and reset time
-  for the active OAuth provider. Usage is fetched lazily and cached, refreshing
+  for the active subscription provider. Usage is fetched lazily and cached, refreshing
   at most once every 60 seconds per provider; auth/network failures simply hide
   the segment.
 

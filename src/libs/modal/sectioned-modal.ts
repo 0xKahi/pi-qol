@@ -29,7 +29,7 @@ export class SectionedModal<TResult> implements Component, Focusable {
     this.activeIndex = Math.min(Math.max(0, options.initialSectionIndex ?? 0), options.sections.length - 1);
     for (const section of options.sections) {
       section.dialog.focused = false;
-      if (options.sections.length > 1) section.dialog.setExtraHints([['^]/^[', 'Section']]);
+      if (options.sections.length > 1) section.dialog.setExtraHints([['^L/^H', 'Section']]);
     }
     this.activate();
   }
@@ -48,9 +48,9 @@ export class SectionedModal<TResult> implements Component, Focusable {
   }
 
   public handleInput(data: string): void {
-    if (matchesKey(data, 'ctrl+]')) {
+    if (matchesKey(data, 'ctrl+l')) {
       this.switchSection(1);
-    } else if (data !== '\x1b' && matchesKey(data, 'ctrl+[')) {
+    } else if (data !== '\x08' && matchesKey(data, 'ctrl+h')) {
       this.switchSection(-1);
     } else {
       this.activeDialog().handleInput(data);

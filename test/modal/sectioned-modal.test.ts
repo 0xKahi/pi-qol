@@ -34,18 +34,35 @@ describe('SectionedModal', () => {
     expect(modal.render(120).join('\n')).toContain('r One');
     modal.focused = true;
     expect(first.focused).toBe(true);
-    modal.handleInput('\x1b[91;5u');
+    modal.handleInput('\x1b[104;5u');
     expect(modal.activeSectionIndex).toBe(1);
     expect(first.focused).toBe(false);
     expect(second.focused).toBe(true);
     modal.handleInput('x');
     expect(inputs).toEqual(['two:x']);
     expect(modal.render(120).join('\n')).toContain('r Two');
+    modal.handleInput('\x0c');
+    expect(modal.activeSectionIndex).toBe(0);
+    modal.handleInput('\x1b[108;5u');
+    expect(modal.activeSectionIndex).toBe(1);
+    modal.handleInput('\x1b[108;5u');
+    expect(modal.activeSectionIndex).toBe(0);
+    expect(activations).toEqual(['first', 'second']);
+  });
+
+  test('raw backspace reaches the active section and former keys no longer switch', () => {
+    const list = new ListTab(theme, { label: 'List', items: ['alpha', 'zeta'], filterText: item => item, renderRow: item => item, onConfirm: () => undefined });
+    const first = dialog([list], { navigation: undefined, filter: {} });
+    const modal = shell(first, dialog([tab('Two')]));
+    modal.handleInput('z');
+    expect(modal.render(100).join('\n')).not.toContain('alpha');
+    modal.handleInput('\x08');
+    expect(modal.activeSectionIndex).toBe(0);
+    expect(modal.render(100).join('\n')).toContain('alpha');
     modal.handleInput('\x1d');
     expect(modal.activeSectionIndex).toBe(0);
-    modal.handleInput('\x1d');
-    modal.handleInput('\x1d');
-    expect(activations).toEqual(['first', 'second']);
+    modal.handleInput('\x1b[91;5u');
+    expect(modal.activeSectionIndex).toBe(0);
   });
 
   test('completion and bare Esc cancel from either section; layers dismiss first and persist', () => {
@@ -62,15 +79,15 @@ describe('SectionedModal', () => {
     modal.handleInput('\r');
     expect(results).toEqual(['chosen']);
     context?.pushLayer(new PreviewLayer(theme, { title: 'Preview', body: () => ['body'] }));
-    modal.handleInput('\x1d');
-    modal.handleInput('\x1d');
+    modal.handleInput('\x0c');
+    modal.handleInput('\x0c');
     expect(modal.render(100).join('\n')).toContain('Preview');
     modal.handleInput('\x1b');
     expect(modal.activeSectionIndex).toBe(0);
     expect(results).toEqual(['chosen']);
     expect(modal.render(100).join('\n')).not.toContain('Preview');
     modal.handleInput('\x1b');
-    modal.handleInput('\x1d');
+    modal.handleInput('\x0c');
     modal.handleInput('\x1b');
     expect(results).toEqual(['chosen', null, null]);
     expect(modal.activeSectionIndex).toBe(1);
@@ -84,8 +101,8 @@ describe('SectionedModal', () => {
     modal.handleInput('\t');
     expect(first.activeIndex).toBe(1);
     expect(modal.activeSectionIndex).toBe(0);
-    modal.handleInput('\x1d');
-    modal.handleInput('\x1d');
+    modal.handleInput('\x0c');
+    modal.handleInput('\x0c');
     expect(first.activeIndex).toBe(1);
     modal.handleInput('\x1b[Z');
     expect(first.activeIndex).toBe(0);
@@ -99,8 +116,8 @@ describe('SectionedModal', () => {
     content.handleNavigation = action => actions.push(action);
     const modal = shell(dialog([content]), dialog([tab('Two')]));
     modal.handleInput('g');
-    modal.handleInput('\x1d');
-    modal.handleInput('\x1d');
+    modal.handleInput('\x0c');
+    modal.handleInput('\x0c');
     modal.handleInput('g');
     expect(actions).toEqual([]);
     modal.handleInput('g');
@@ -112,8 +129,8 @@ describe('SectionedModal', () => {
     const content = tab('One');
     content.handleInput = data => inputs.push(data);
     const modal = new SectionedModal(tui as never, theme, { sections: [{ label: 'Only', dialog: dialog([content]) }] });
-    modal.handleInput('\x1d');
-    modal.handleInput('\x1b[91;5u');
+    modal.handleInput('\x0c');
+    modal.handleInput('\x1b[104;5u');
     expect(inputs).toEqual([]);
     expect(modal.render(100).join('\n')).not.toContain('Section');
     const initial = new SectionedModal(tui as never, theme, { sections: [{ label: 'One', dialog: dialog([content]) }, { label: 'Two', dialog: dialog([tab('Two')]) }], initialSectionIndex: 1 });
@@ -126,12 +143,12 @@ describe('SectionedModal', () => {
       const second = dialog([tab('Two', 4)]);
       const modal = new SectionedModal(tui as never, theme, { frame, sections: [{ label: 'First', dialog: first }, { label: 'Second', dialog: second }] });
       expect(modal.render(100).length).toBe(dialog([tab('One')], { frame }).render(100).length);
-      expect(modal.render(100).join('\n')).toContain('^]/^[ Section');
+      expect(modal.render(100).join('\n')).toContain('^L/^H Section');
       expect(modal.render(100)[0]).toContain('First');
       const height = modal.render(100).length;
-      modal.handleInput('\x1d');
+      modal.handleInput('\x0c');
       expect(modal.render(100).length).toBe(height + 3);
-      expect(modal.render(100).join('\n')).toContain('^]/^[ Section');
+      expect(modal.render(100).join('\n')).toContain('^L/^H Section');
       for (const line of modal.render(20)) expect(visibleWidth(line)).toBeLessThanOrEqual(20);
       if (frame === 'bordered') expect(modal.render(20)[0]).toMatch(/^╭.*╮$/);
     }

@@ -217,3 +217,36 @@ describe('CustomFooterComponent styling', () => {
     expect(visibleWidth(pathLine!)).toBe(12);
   });
 });
+
+test('GO is a subscription with GO usage; Zen is neither', async () => {
+  dye.setEnabled(true);
+  try {
+    const usageCache = new SubscriptionUsageCache({ now: () => 0, api: { fetchUsage: async () => ({
+      status: 'ok', label: 'OC-GO', windows: [
+        { label: 'Week', usedPercent: 2.4, resetAt: new Date(100000) },
+        { label: '5h', usedPercent: 1.8, resetAt: new Date(50000) },
+      ],
+    }) } });
+    usageCache.refresh('opencode-go');
+    await Bun.sleep(0);
+    for (const provider of ['opencode-go', 'opencode']) {
+      const component = createComponent({ provider, usageCache });
+      try {
+        const line = component.render(200)[1]!;
+        if (provider === 'opencode-go') {
+          expect(dye.strip(line)).toContain(' (sub)');
+          expect(dye.strip(line)).toContain('OC-GO 5h');
+          expect(dye.strip(line)).not.toContain('Week');
+          expect(line).toContain(dye.colorize('OC-GO', { fg: dye.hex('#00ADD8') }));
+        } else {
+          expect(dye.strip(line)).not.toContain(' (sub)');
+          expect(dye.strip(line)).not.toContain('OC-GO');
+        }
+      } finally {
+        component.dispose();
+      }
+    }
+  } finally {
+    dye.setEnabled(undefined);
+  }
+});
