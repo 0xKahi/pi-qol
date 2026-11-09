@@ -4,6 +4,7 @@ import type { BuildSystemPromptOptions, ContextEvent, SlashCommandInfo, ToolInfo
 import { estimateTokens } from '@earendil-works/pi-coding-agent';
 
 import {
+  buildNativeSnapshot,
   CompactionState,
   captureActiveTools,
   collectPromptSources,
@@ -80,6 +81,103 @@ function assistantMessage(
     timestamp,
   };
 }
+
+test('hidden tool exposure and hiddenTools both exclude active definitions in frozen capture and fallback', () => {
+  const allTools = [tool('visible', 'local'), { ...tool('private', 'local'), exposure: 'hidden' as const }, tool('suppressed', 'local')];
+  const options = { cwd: '/tmp', hiddenTools: ['suppressed'] };
+  assert.deepEqual(
+    captureActiveTools(
+      allTools,
+      allTools.map(tool => tool.name),
+      options,
+    ).map(tool => tool.name),
+    ['visible'],
+  );
+  const capture = new InitialCaptureState();
+  capture.prepare(options);
+  options.hiddenTools.push('visible'); // prepared hidden set is owned
+  const snapshot = capture.finalize(() => ({
+    systemPrompt: 'Base',
+    messages: [],
+    baselineMessages: [],
+    allTools,
+    activeToolNames: allTools.map(tool => tool.name),
+    origin: 'real-turn',
+  }));
+  const fallback = buildNativeSnapshot({
+    systemPrompt: 'Base',
+    options: { cwd: '/tmp', hiddenTools: ['suppressed'] },
+    allTools,
+    activeToolNames: allTools.map(tool => tool.name),
+  });
+  for (const current of [snapshot, fallback]) {
+    const definitions = current?.groups.flatMap(group => group.items).filter(item => item.kind === 'tool');
+    assert.equal(definitions?.length, 1);
+    assert.equal(definitions?.[0]?.label, 'visible');
+    assert.ok((definitions?.[0]?.tokens ?? 0) > 0);
+  }
+});
+
+test('system-role additions have tokens and retain raw preview content', () => {
+  const messages = [{ role: 'system' as const, content: 'Additional system instructions', timestamp: 1 }];
+  const items = measureInjectedMessages(messages, []);
+  assert.equal(items.length, 1);
+  assert.equal(items[0]?.text, messages[0]?.content);
+  assert.ok((items[0]?.tokens ?? 0) > 0);
+  assert.equal(items[0]?.requestOnly, true);
+});
+
+test('live and restored identities never suppress non-empty same-timestamp messages', () => {
+  const state = new SilentProbeState();
+  const attempt = state.start();
+  state.beginRun(attempt.token, 'user');
+  const empty = { role: 'user' as const, content: '', timestamp: 10 };
+  const real = { ...empty, content: 'Keep me' };
+  const abort = assistantMessage('error', 11, 'This operation was aborted');
+  const providerError = assistantMessage('error', 11, 'Other failure');
+  const legacyAbort = assistantMessage('aborted', 11);
+  state.recordMessage(empty);
+  state.recordMessage(abort);
+  state.recordMessage({ ...empty, timestamp: 12 });
+  assert.deepEqual(state.syntheticMessages, [
+    { role: 'user', timestamp: 10 },
+    { role: 'assistant', timestamp: 11 },
+  ]);
+  const restored = new SilentProbeState();
+  restored.restoreIdentities(state.syntheticMessages);
+  for (const probe of [state, restored]) {
+    assert.deepEqual(probe.filterMessages([empty, real, abort, providerError, legacyAbort]), [real, providerError, legacyAbort]);
+    assert.equal(probe.sanitizeMessage(real), undefined);
+    assert.equal(probe.sanitizeMessage(providerError), undefined);
+    assert.equal(probe.sanitizeMessage(legacyAbort), undefined);
+    assert.equal(probe.sanitizeMessage(abort)?.role, 'assistant');
+  }
+  state.settle(true);
+});
+
+test('probe input claims reject streaming sends and fail nested sends without run ownership', async () => {
+  const state = new SilentProbeState();
+  const attempt = state.start();
+  assert.equal(state.isProbeInput('extension', attempt.token, 'followUp'), false);
+  assert.equal(state.isProbeInput('extension', attempt.token), true);
+  assert.equal(state.isProbeInput('extension', attempt.token), false);
+  assert.equal(state.beginRun(attempt.token, 'user'), false);
+  assert.equal(state.isCurrentRun, false);
+  const outcome = await attempt.completion;
+  assert.equal(outcome.status, 'failed');
+  if (outcome.status === 'failed') assert.match(outcome.reason, /nested-send.*empty probe prompt may reach the model/);
+});
+
+test('custom runs cannot claim the probe even with its token', async () => {
+  const state = new SilentProbeState();
+  const attempt = state.start();
+  state.isProbeInput('extension', attempt.token);
+  assert.equal(state.beginRun(attempt.token, 'custom'), false);
+  assert.equal(state.isCurrentRun, false);
+  const outcome = await attempt.completion;
+  assert.equal(outcome.status, 'failed');
+  if (outcome.status === 'failed') assert.match(outcome.reason, /foreign-run/);
+});
 
 test('captureActiveTools uses the final active set', () => {
   const tools = captureActiveTools([tool('read', 'builtin'), tool('search', 'npm:web')], ['search'], { toolSnippets: { search: 'Search the web' } });
@@ -486,7 +584,7 @@ test('SilentProbeState sanitizes and filters only exact probe identities', async
 
   const probeUser = { role: 'user', content: [], timestamp: 10 } satisfies ContextEvent['messages'][number];
   const realUser = { role: 'user', content: [], timestamp: 11 } satisfies ContextEvent['messages'][number];
-  const probeAssistant = assistantMessage('aborted', 12);
+  const probeAssistant = assistantMessage('error', 12, 'This operation was aborted');
 
   state.recordMessage(probeUser);
   state.recordMessage(probeAssistant);
@@ -507,7 +605,7 @@ test('SilentProbeState sanitizes and filters only exact probe identities', async
   assert.equal(state.settle(true), true);
   assert.deepEqual(await attempt.completion, { status: 'captured' });
   assert.equal(state.start().started, false);
-  assert.equal(state.sanitizeMessage(probeAssistant), undefined);
+  assert.equal(state.sanitizeMessage(probeAssistant)?.role, 'assistant');
 });
 
 test('SilentProbeState claims its run by token when an input transform rewrites the prompt', () => {
@@ -522,9 +620,9 @@ test('SilentProbeState claims its run by token when an input transform rewrites 
   const probePrompt = { role: 'user', content: transformed, timestamp: 30 } satisfies ContextEvent['messages'][number];
   state.recordMessage(probePrompt);
 
-  // Blanked for the transcript, filtered out of every later model context.
-  assert.deepEqual(state.sanitizeMessage(probePrompt), { role: 'user', content: [], timestamp: 30 });
-  assert.deepEqual(state.filterMessages([probePrompt]), []);
+  // A late transform cannot justify deleting non-empty content.
+  assert.equal(state.sanitizeMessage(probePrompt), undefined);
+  assert.deepEqual(state.filterMessages([probePrompt]), [probePrompt]);
   state.settle(true);
 });
 
@@ -537,13 +635,13 @@ test('SilentProbeState leaves an unattributed run untouched and fails the attemp
   assert.equal(state.isCurrentRun, false, 'an unattributed run must not arm the abort guard');
   assert.deepEqual(await attempt.completion, {
     status: 'failed',
-    reason: 'Another agent run started before the silent probe was recognized.',
+    reason: 'Silent probe failed (foreign-run): another agent run started before the silent probe was recognized.',
   });
 
-  // A delayed probe run is still claimed, so it is aborted and sanitized.
-  assert.equal(state.beginRun(attempt.token), true);
-  assert.equal(state.isCurrentRun, true);
-  assert.equal(state.settle(false), true);
+  // Failed attempts never claim delayed sends or arm their abort guard.
+  assert.equal(state.beginRun(attempt.token), false);
+  assert.equal(state.isCurrentRun, false);
+  assert.equal(state.settle(false), false);
 });
 
 test('SilentProbeState recognizes probe input only for its own token and source', () => {
@@ -632,27 +730,21 @@ test('parsePersistedIdentities accepts only exact role/timestamp records', () =>
   assert.deepEqual(parsePersistedIdentities([]), []);
 });
 
-test('SilentProbeState keeps a timed-out running probe abortable until settlement', async () => {
+test('SilentProbeState releases a timed-out running probe', async () => {
   const state = new SilentProbeState();
   const attempt = state.start(1);
   assert.equal(state.beginRun(attempt.token), true);
-
-  assert.deepEqual(await attempt.completion, { status: 'failed', reason: 'Silent probe timed out.' });
-  assert.equal(state.isCurrentRun, true);
-  assert.equal(state.settle(false), true);
+  assert.deepEqual(await attempt.completion, { status: 'failed', reason: 'Silent probe timed out (timeout).' });
   assert.equal(state.isCurrentRun, false);
+  assert.equal(state.settle(false), false);
 });
 
-test('SilentProbeState retains a delayed synthetic turn after a pre-run timeout', async () => {
+test('SilentProbeState leaves delayed sends untouched after a pre-run timeout', async () => {
   const state = new SilentProbeState();
   const attempt = state.start(1);
-
-  assert.deepEqual(await attempt.completion, { status: 'failed', reason: 'Silent probe timed out.' });
-  assert.equal(state.isCurrentRun, false);
-
+  assert.deepEqual(await attempt.completion, { status: 'failed', reason: 'Silent probe timed out (timeout).' });
   assert.equal(state.beginRun(undefined), false);
+  assert.equal(state.beginRun(attempt.token), false);
   assert.equal(state.isCurrentRun, false);
-  assert.equal(state.beginRun(attempt.token), true);
-  assert.equal(state.isCurrentRun, true);
-  assert.equal(state.settle(false), true);
+  assert.equal(state.settle(false), false);
 });

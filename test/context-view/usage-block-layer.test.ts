@@ -1,8 +1,26 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Theme } from '@earendil-works/pi-coding-agent';
+import type { TuiMouseEvent } from '@earendil-works/pi-tui';
 import type { UsagePreviewEntry } from '../../src/extensions/context-view/model.ts';
 import { UsageBlockLayer } from '../../src/extensions/context-view/ui/usage-block-layer.ts';
+
+function wheel(wheelDelta: number): TuiMouseEvent {
+  return {
+    type: 'wheel',
+    button: 'none',
+    x: 0,
+    y: 0,
+    screenX: 0,
+    screenY: 0,
+    width: 120,
+    height: 40,
+    shift: false,
+    alt: false,
+    ctrl: false,
+    wheelDelta,
+  };
+}
 
 const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as Theme;
 const entries: UsagePreviewEntry[] = [
@@ -58,8 +76,8 @@ test('UsageBlockLayer re-caps on height and width changes', () => {
 test('UsageBlockLayer steps one block per wheel notch', () => {
   const preview = layer([]);
   assert.match(preview.render(60, 40).join('\n'), /→ \[first\]/);
-  preview.handleInput('\u001b[<65;1;1M');
+  preview.handleMouse(wheel(1));
   assert.match(preview.render(60, 40).join('\n'), /→ \[second\]/);
-  preview.handleInput('\u001b[<64;1;1M');
+  preview.handleMouse(wheel(-1));
   assert.match(preview.render(60, 40).join('\n'), /→ \[first\]/);
 });

@@ -5,6 +5,8 @@ import type { InitialSnapshot, InjectionItem } from '../../src/extensions/contex
 import {
   buildInjectionRows,
   collectItemsById,
+  filterInjections,
+  injectionPreviewText,
   normalizeInlineText,
   normalizePreviewText,
 } from '../../src/extensions/context-view/ui/injections-model.ts';
@@ -88,6 +90,53 @@ test('collectItemsById indexes every snapshot item including children', () => {
 
   assert.deepEqual([...items.keys()].sort(), ['base-prompt', 'skills', 'tool:builtin', 'tool:builtin:bash', 'tool:builtin:read', 'web_search']);
   assert.equal(items.get('tool:builtin:read')?.tokens, 20);
+});
+
+test('Name filtering preserves matching subtrees and ancestors without mutating the snapshot', () => {
+  const original = snapshot();
+  const groupMatch = filterInjections(original, ' PI ', 'name');
+  assert.equal(groupMatch.snapshot.groups.length, 1);
+  assert.equal(groupMatch.snapshot.groups[0], original.groups[0]);
+  const parentMatch = filterInjections(original, 'tool:builtin', 'name');
+  assert.equal(parentMatch.snapshot.groups[0]?.items[0]?.children?.length, 2);
+  const childMatch = filterInjections(original, 'BASH', 'name');
+  assert.equal(childMatch.snapshot.groups[0]?.items[0]?.children?.length, 1);
+  assert.equal(childMatch.snapshot.groups[0]?.items[0]?.id, 'tool:builtin');
+  assert.equal(original.groups[0]?.items[1]?.children?.length, 2);
+  assert.equal(childMatch.snapshot.totalTokens, original.totalTokens);
+});
+
+test('Content filtering uses expanded JSON and section/reference preview text, not labels', () => {
+  const original = snapshot();
+  const json = '{"needle":"value"}';
+  const special: InjectionItem = {
+    ...item('label-only', 'pi', true, 10),
+    text: 'not rendered',
+    sections: [{ label: 'Definition', text: json, tokens: 5, jsonSpan: { start: 0, end: json.length } }],
+  };
+  const group = original.groups[0];
+  assert.ok(group);
+  const input = { ...original, groups: [{ ...group, items: [special] }] };
+  assert.match(injectionPreviewText(special), /"needle": "value"/);
+  assert.equal(filterInjections(input, '"needle":   "value"', 'content').empty, false);
+  assert.equal(filterInjections(input, 'not rendered', 'content').empty, true);
+  assert.equal(filterInjections(input, 'label-only', 'content').empty, true);
+  const reference: InjectionItem = {
+    ...special,
+    sections: undefined,
+    text: 'body',
+    injectedReferences: [{ itemId: 'ext-item', offset: 0, text: 'restored secret\n', source: { id: 'ext', label: 'extension', native: false } }],
+  };
+  assert.match(injectionPreviewText(reference), /restored secret/);
+  assert.equal(filterInjections({ ...input, groups: [{ ...group, items: [reference] }] }, 'restored secret', 'content').empty, false);
+});
+
+test('empty query restores the snapshot and no matches explicitly reports empty', () => {
+  const input = snapshot();
+  assert.equal(filterInjections(input, ' \n ', 'content').snapshot, input);
+  const result = filterInjections(input, 'absent', 'name');
+  assert.equal(result.empty, true);
+  assert.deepEqual(result.snapshot.groups, []);
 });
 
 test('normalizePreviewText normalizes whitespace and removes terminal controls', () => {

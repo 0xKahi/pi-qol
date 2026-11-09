@@ -115,11 +115,13 @@ function guessOwner(text: string, sources: readonly PromptSourceSlice[]): Prompt
       (packageName !== undefined && containsPackage(normalized, packageName)) ||
       (/^(npm:|git:|https?:\/\/|ssh:\/\/)/.test(source.source) && containsPackage(normalized, source.source))
     )
-      matches.add(source.source);
+      matches.add(extensionSource(source.source, source.path).id);
   }
   const [match] = matches;
   if (matches.size !== 1 || match === undefined) return { source: AGGREGATE_SOURCE };
-  return { source: extensionSource(match), tool: guessTool(normalized, sources, match) };
+  const owner = sources.find(source => extensionSource(source.source, source.path).id === match);
+  if (!owner) return { source: AGGREGATE_SOURCE };
+  return { source: extensionSource(owner.source, owner.path), tool: guessTool(normalized, sources, match) };
 }
 
 /**
@@ -131,7 +133,7 @@ function guessOwner(text: string, sources: readonly PromptSourceSlice[]): Prompt
 function guessTool(text: string, sources: readonly PromptSourceSlice[], owner: string): string | undefined {
   const matches = new Set<string>();
   for (const source of sources) {
-    if (source.source !== owner) continue;
+    if (extensionSource(source.source, source.path).id !== owner) continue;
     for (const name of source.names ?? []) {
       if (name.length >= MIN_NAME_LENGTH && containsName(text, name)) matches.add(name);
     }

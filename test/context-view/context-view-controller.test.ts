@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import type { BuildSystemPromptOptions, ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { type BuildSystemPromptOptions, type ExtensionAPI, type ExtensionContext, SettingsManager } from '@earendil-works/pi-coding-agent';
 import { CompactionState, InitialCaptureState, SilentProbeState } from '../../src/extensions/context-view/capture';
-import { prepareContextViewData } from '../../src/extensions/context-view/context-view-controller';
+import { VIRTUAL_MODEL_API } from '../../src/extensions/context-view/constants';
+import { checkProbeStartConditions, prepareContextViewData } from '../../src/extensions/context-view/context-view-controller';
 import { readProbeToken } from '../../src/extensions/context-view/probe-token';
 
 const options: BuildSystemPromptOptions = { cwd: '/tmp' };
@@ -30,6 +31,11 @@ function preparedState(): InitialCaptureState {
 
 function context(waitForIdle?: () => Promise<void>): ExtensionContext {
   return {
+    mode: 'tui',
+    hasUI: true,
+    isIdle: () => true,
+    hasPendingMessages: () => false,
+    isProjectTrusted: () => false,
     cwd: '/tmp',
     model: undefined,
     modelRegistry: {},
@@ -46,6 +52,144 @@ const pi = {
   getActiveTools: () => [],
   getCommands: () => [],
 } as unknown as ExtensionAPI;
+
+describe('checkProbeStartConditions', () => {
+  const settings = () => SettingsManager.inMemory({ cacheWarming: 'off', compaction: { enabled: true, reserveTokens: 100 } });
+  const authenticated = () =>
+    ({
+      ...context(),
+      model: { id: 'test', provider: 'test', api: 'anthropic-messages' },
+      modelRegistry: { hasConfiguredAuth: () => true },
+    }) as unknown as ExtensionContext;
+
+  const cases: Array<{
+    name: string;
+    reason: string;
+    ctx?: () => ExtensionContext;
+    autoProbing?: boolean;
+    read?: () => ReturnType<typeof settings>;
+    compact?: boolean;
+  }> = [
+    { name: 'disabled auto_probing', reason: 'automatic probing is disabled', autoProbing: false },
+    { name: 'non-presentable host', reason: 'TUI presentation', ctx: () => ({ ...authenticated(), hasUI: false }) },
+    {
+      name: 'failed idle wait',
+      reason: 'waiting for idle failed',
+      ctx: () =>
+        ({
+          ...authenticated(),
+          waitForIdle: async () => {
+            throw new Error('busy');
+          },
+        }) as ExtensionContext,
+    },
+    { name: 'busy event context without idle wait', reason: 'not idle', ctx: () => ({ ...authenticated(), isIdle: () => false }) },
+    { name: 'active compaction', reason: 'compaction is in progress', compact: true },
+    { name: 'queued input', reason: 'queued input', ctx: () => ({ ...authenticated(), hasPendingMessages: () => true }) },
+    { name: 'missing model', reason: 'no model is selected', ctx: () => context() },
+    {
+      name: 'virtual model',
+      reason: 'virtual model',
+      ctx: () => ({ ...authenticated(), model: { ...authenticated().model, api: VIRTUAL_MODEL_API } }) as unknown as ExtensionContext,
+    },
+    {
+      name: 'missing auth',
+      reason: 'no configured authentication',
+      ctx: () => ({ ...authenticated(), modelRegistry: { hasConfiguredAuth: () => false } }) as unknown as ExtensionContext,
+    },
+    { name: 'idle cache warming', reason: 'idle cache warming', read: () => SettingsManager.inMemory({ cacheWarming: 'idle' }) },
+    {
+      name: 'compaction threshold',
+      reason: 'auto-compaction threshold',
+      ctx: () => ({ ...authenticated(), getContextUsage: () => ({ tokens: 950, contextWindow: 1000, percent: 95 }) }) as ExtensionContext,
+    },
+    {
+      name: 'unreadable settings',
+      reason: 'settings unreadable',
+      read: () => {
+        throw new Error('read failed');
+      },
+    },
+    {
+      name: 'unreadable compaction settings with unknown usage',
+      reason: 'settings unreadable',
+      read: () => {
+        const manager = settings();
+        manager.getCompactionSettings = () => {
+          throw new Error('invalid settings');
+        };
+        return manager;
+      },
+    },
+    {
+      name: 'settings load errors',
+      reason: 'settings unreadable',
+      read: () =>
+        ({ ...settings(), drainErrors: () => [{ scope: 'global', error: new Error('bad JSON') }] }) as unknown as ReturnType<typeof settings>,
+    },
+  ];
+  for (const entry of cases) {
+    test(`${entry.name} sends nothing and leaves the attempt available`, async () => {
+      let sends = 0;
+      const probe = new SilentProbeState();
+      const compaction = new CompactionState();
+      if (entry.compact) compaction.begin(new AbortController().signal);
+      const data = await prepareContextViewData(
+        {
+          ...pi,
+          sendUserMessage: () => {
+            sends++;
+          },
+        } as ExtensionAPI,
+        entry.ctx?.() ?? authenticated(),
+        preparedState(),
+        probe,
+        compaction,
+        {
+          autoProbing: entry.autoProbing,
+          readProbeSettings: entry.read ?? settings,
+        },
+      );
+      expect(data.degradedReason).toContain(entry.reason);
+      expect(sends).toBe(0);
+      expect(probe.start().started).toBe(true);
+      probe.fail('cleanup');
+    });
+  }
+
+  test('virtual API discriminator matches Pi and unknown usage is below threshold', async () => {
+    expect(VIRTUAL_MODEL_API).toBe('pi-virtual');
+    expect(await checkProbeStartConditions(authenticated(), { compaction: new CompactionState(), readProbeSettings: settings })).toBe('ok');
+  });
+
+  test('disabled probing is checked before idle waiting and settings', async () => {
+    const ctx = {
+      ...authenticated(),
+      waitForIdle: async () => {
+        throw new Error('must not wait');
+      },
+    };
+    expect(
+      await checkProbeStartConditions(ctx, {
+        compaction: new CompactionState(),
+        autoProbing: false,
+        readProbeSettings: () => {
+          throw new Error('must not read');
+        },
+      }),
+    ).toContain('disabled');
+  });
+
+  test('disabled auto-compaction permits usage above its threshold', async () => {
+    const ctx = { ...authenticated(), getContextUsage: () => ({ tokens: 1000, contextWindow: 1000, percent: 100 }) } as ExtensionContext;
+    expect(
+      await checkProbeStartConditions(ctx, {
+        compaction: new CompactionState(),
+        readProbeSettings: () => SettingsManager.inMemory({ compaction: { enabled: false } }),
+      }),
+    ).toBe('ok');
+  });
+});
 
 describe('prepareContextViewData', () => {
   test('prepares data from an ordinary event context without command-only APIs', async () => {

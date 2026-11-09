@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { KeybindingsManager, Theme } from '@earendil-works/pi-coding-agent';
+import type { TuiMouseEvent } from '@earendil-works/pi-tui';
 import {
   ListTab,
   type ListTabOptions,
@@ -46,6 +47,139 @@ function createDialog<TResult>(
 }
 
 describe('ModalDialog', () => {
+  test('capturing tabs and layers own raw keys and footer hints', () => {
+    const raw: string[] = [];
+    let context: ModalTabContext | undefined;
+    let closed = false;
+    const tab: ModalTab = listTab(['a']);
+    tab.attach = value => {
+      context = value;
+    };
+    const target = {
+      capturesInput: () => true,
+      handleInput: (data: string) => {
+        raw.push(data);
+      },
+      hints: (): Array<readonly [string, string]> => [['Enter', 'Apply']],
+    };
+    const capturingTab: ModalTab = {
+      ...target,
+      label: 'Capture',
+      render: () => ['editing'],
+      handleNavigation: () => {
+        throw new Error('mapped input');
+      },
+    };
+    const dialog = createDialog([capturingTab, tab], {
+      navigation: new VimNavigationScheme(),
+      onComplete: () => {
+        closed = true;
+      },
+    });
+    for (const key of ['\t', '\x1b[Z', 'j', 'q']) dialog.handleInput(key);
+    expect(raw).toEqual(['\t', '\x1b[Z', 'j', 'q']);
+    expect(dialog.activeIndex).toBe(0);
+    expect(closed).toBe(false);
+    expect(dialog.render(120).at(-2)?.trim()).toBe('Enter Apply');
+
+    const layered = createDialog([tab, listTab(['b'])], {
+      navigation: new VimNavigationScheme(),
+      onComplete: () => {
+        closed = true;
+      },
+    });
+    context?.pushLayer({
+      ...target,
+      hints: () => [['Enter', 'Apply']],
+      render: () => ['layer'],
+      handleNavigation: () => {
+        throw new Error('mapped input');
+      },
+    });
+    raw.length = 0;
+    for (const key of ['\t', 'j', 'q']) layered.handleInput(key);
+    expect(raw).toEqual(['\t', 'j', 'q']);
+    expect(layered.activeIndex).toBe(0);
+    expect(closed).toBe(false);
+    expect(layered.render(120).at(-2)?.trim()).toBe('Enter Apply');
+  });
+
+  test('forwards normalized mouse events only to the current content target', () => {
+    const seen: string[] = [];
+    let context: ModalTabContext | undefined;
+    const tab: ModalTab = listTab(['a']);
+    tab.attach = value => {
+      context = value;
+    };
+    tab.handleMouse = event => {
+      seen.push(`tab:${event.wheelDelta}`);
+      return { handled: true };
+    };
+    const dialog = createDialog([tab], { onComplete: () => undefined });
+    const event: TuiMouseEvent = {
+      type: 'wheel',
+      wheelDelta: 3,
+      button: 'none',
+      x: 0,
+      y: 0,
+      screenX: 0,
+      screenY: 0,
+      width: 80,
+      height: 24,
+      shift: false,
+      alt: false,
+      ctrl: false,
+    };
+    expect(dialog.handleMouse(event)).toEqual({ handled: true });
+    const layer = new PreviewLayer(theme, { title: 'Preview', body: () => [] });
+    context?.pushLayer(layer);
+    expect(dialog.handleMouse(event)).toBeUndefined();
+    const mouseLayer = Object.assign(layer, {
+      handleMouse: (received: TuiMouseEvent) => {
+        seen.push(`layer:${received.wheelDelta}`);
+        return { handled: true, render: false };
+      },
+    });
+    context?.pushLayer(mouseLayer);
+    expect(dialog.handleMouse(event)).toEqual({ handled: true, render: false });
+    expect(seen).toEqual(['tab:3', 'layer:3']);
+    expect(createDialog([listTab(['a'])], { onComplete: () => undefined }).handleMouse(event)).toBeUndefined();
+  });
+
+  test('notices replace the footer without changing height and expiry requests rendering', async () => {
+    let renders = 0;
+    const dialog = new ModalDialog(
+      {
+        terminal: { rows: 24 },
+        requestRender: () => {
+          renders++;
+        },
+      } as never,
+      theme,
+      keybindings,
+      {
+        tabs: [listTab(['a'])],
+        cancelValue: null,
+        onComplete: () => undefined,
+      },
+    );
+    const height = dialog.render(80).length;
+    dialog.showNotice('Copied', 'success', 15);
+    expect(dialog.render(80).length).toBe(height);
+    expect(dialog.render(80).at(-2)).toBe('Copied');
+    expect(renders).toBe(1);
+    await Bun.sleep(35);
+    expect(dialog.render(80).at(-2)).toContain('Esc Close');
+    expect(renders).toBe(2);
+
+    dialog.showNotice('Old', 'warning', 15);
+    dialog.showNotice('Newest', 'error', 70);
+    await Bun.sleep(35);
+    expect(dialog.render(80).at(-2)).toBe('Newest');
+    await Bun.sleep(55);
+    expect(dialog.render(80).at(-2)).toContain('Esc Close');
+  });
+
   test('cycles tabs with wrapping in both directions and retains per-tab selection', () => {
     const first = listTab(['a', 'b']);
     const second = listTab(['c', 'd']);

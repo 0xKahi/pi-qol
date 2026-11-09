@@ -21,8 +21,19 @@ export const AGGREGATE_SOURCE: InjectionSource = {
 };
 
 /** Injection source for one non-builtin provenance string, e.g. `npm:pi-web-providers`. */
-export function extensionSource(source: string): InjectionSource {
+export function extensionSource(source: string, path?: string): InjectionSource {
+  if (path && /^(local|auto|cli)$/.test(source)) {
+    return { id: `tool-source:${source}:${path}`, label: sourcePathParts(path).join('/'), native: false, path };
+  }
   return { id: `tool-source:${source}`, label: source, native: false };
+}
+
+function sourcePathParts(path: string): string[] {
+  return path
+    .replaceAll('\\', '/')
+    .replace(/\/index\.(ts|js)$/, '')
+    .split('/')
+    .filter(Boolean);
 }
 
 /** Shared name of pi's own prompt; Usage and Injections must present it identically. */
@@ -54,6 +65,8 @@ export interface InjectionSource {
   readonly label: string;
   /** True for pi-native components. */
   readonly native: boolean;
+  /** Only path-loaded extensions participate in per-snapshot suffix labels. */
+  readonly path?: string;
 }
 
 /** Half-open `[start, end)` character range within captured text. */
@@ -238,8 +251,36 @@ export interface ContextUsageSnapshot {
  */
 export function groupInjections(items: readonly InjectionItem[]): InjectionGroup[] {
   const groups = new Map<string, MutableGroup>();
-  for (const input of items) {
-    const item = copyItem(input);
+  const owned = items.map(copyItem);
+  const sources = new Map<string, InjectionSource>();
+  const visit = (item: InjectionItem, apply: (source: InjectionSource) => InjectionSource): InjectionItem => ({
+    ...item,
+    source: apply(item.source),
+    injectedReferences: item.injectedReferences?.map(ref => ({ ...ref, source: apply(ref.source) })),
+    sections: item.sections?.map(section => ({
+      ...section,
+      injectedReferences: section.injectedReferences?.map(ref => ({ ...ref, source: apply(ref.source) })),
+    })),
+    children: item.children?.map(child => visit(child, apply)),
+  });
+  for (const item of owned)
+    visit(item, source => {
+      sources.set(source.id, source);
+      return source;
+    });
+  const paths = [...new Set([...sources.values()].flatMap(source => (source.path ? [source.path] : [])))];
+  const labels = new Map(
+    paths.map(path => {
+      const parts = sourcePathParts(path);
+      for (let length = 1; length <= parts.length; length++) {
+        const suffix = parts.slice(-length).join('/');
+        if (paths.every(other => other === path || sourcePathParts(other).slice(-length).join('/') !== suffix)) return [path, suffix];
+      }
+      return [path, path];
+    }),
+  );
+  for (const input of owned) {
+    const item = visit(input, source => (source.path ? { ...source, label: labels.get(source.path) ?? source.label } : source));
     let group = groups.get(item.source.id);
     if (group === undefined) {
       group = { source: item.source, items: [], totalTokens: 0 };

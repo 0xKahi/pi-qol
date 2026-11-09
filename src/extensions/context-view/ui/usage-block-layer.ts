@@ -1,15 +1,17 @@
 /** Selectable chronological Usage preview layer with height-bounded entry excerpts. */
 import type { Theme } from '@earendil-works/pi-coding-agent';
+import { matchesKey, type TuiMouseEvent, type TuiMouseEventResult } from '@earendil-works/pi-tui';
 
 import { BODY_INDENT, calculateViewport, fitLine, type Hint, type ModalLayer, type NavigationAction, spreadLine } from '../../../libs/modal';
 import type { UsagePreviewEntry } from '../model';
+import { type CopyServices, copyWithNotice } from './copy';
 import { BlockNavigator, layoutPreviewBlocks, type PreviewLayout } from './usage-preview';
-import { parseWheelDirection } from './wheel';
 
 const MAX_EXCERPT_LINES = 20;
 const MIN_EXCERPT_LINES = 2;
 
 export interface UsageBlockLayerOptions {
+  readonly copy?: CopyServices;
   readonly title: string | (() => string);
   readonly meta?: string | (() => string);
   readonly entries: readonly UsagePreviewEntry[];
@@ -37,15 +39,24 @@ export class UsageBlockLayer implements ModalLayer {
 
   public hints(): Hint[] {
     const selected = this.blocks[this.navigator.selected];
-    return selected?.truncated === true ? [['Enter', 'View Content']] : [];
+    return [...(selected?.truncated === true ? [['Enter', 'View Content'] as const] : []), ['y', 'Copy']];
   }
 
-  /** One wheel notch steps one block; navigation is supplied as semantic actions by the modal shell. */
+  /** Search stays unbound in the block stream; full-content previews own search. */
   public handleInput(data: string): void {
-    const wheel = parseWheelDirection(data);
-    if (wheel === undefined) return;
-    if (wheel < 0) this.navigator.stepBack();
-    else this.navigator.stepForward();
+    if (matchesKey(data, 'y') && this.options.copy !== undefined) {
+      void copyWithNotice(this.options.copy, this.options.entries[this.navigator.selected]?.text ?? '');
+    }
+  }
+
+  public handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    if (event.type !== 'wheel') return undefined;
+    const delta = event.wheelDelta ?? 0;
+    for (let step = 0; step < Math.abs(delta); step++) {
+      const changed = delta < 0 ? this.navigator.stepBack() : this.navigator.stepForward();
+      if (!changed) break;
+    }
+    return { handled: true };
   }
 
   public handleNavigation(action: NavigationAction): void {

@@ -5,9 +5,61 @@
  * the shared modal library; terminal sanitizers live in `../text` and are
  * re-exported here for callers that reached them through this module.
  */
+import type { Theme } from '@earendil-works/pi-coding-agent';
 import type { InitialSnapshot, InjectionItem } from '../model';
+import { normalizePreviewText } from '../text';
+import { expandJsonSpan } from './json-preview';
+import { findMatches, normalizeSearchText } from './search';
+import { previewBodyLines } from './section-preview';
 
 export { normalizeInlineText, normalizePreviewText } from '../text';
+
+export type InjectionFilterMode = 'name' | 'content';
+
+export interface InjectionFilterResult {
+  readonly snapshot: InitialSnapshot;
+  readonly empty: boolean;
+}
+
+// The section renderer only uses these two theme operations. Keeping them
+// transparent reuses its exact heading/reference/JSON derivation without ANSI.
+const plainTheme = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as Theme;
+
+/** Unwrapped text shown by the Injections preview (including expanded JSON). */
+export function injectionPreviewText(item: InjectionItem): string {
+  return previewBodyLines(
+    plainTheme,
+    item,
+    Number.MAX_SAFE_INTEGER,
+    (text, span) => normalizePreviewText(expandJsonSpan(text, span)).split('\n'),
+    item.label,
+  ).join('\n');
+}
+
+/** Preserve original estimates; prune only visibility, never mutate the capture. */
+export function filterInjections(snapshot: InitialSnapshot, query: string, mode: InjectionFilterMode): InjectionFilterResult {
+  if (normalizeSearchText(query) === '') return { snapshot, empty: snapshot.groups.every(group => group.items.length === 0) };
+  const matches = (text: string) => findMatches(text, query, mode === 'content').length > 0;
+  const filterItem = (item: InjectionItem): InjectionItem | undefined => {
+    const matched = matches(mode === 'name' ? item.label : injectionPreviewText(item));
+    if (mode === 'name' && matched) return item;
+    const children = (item.children ?? []).flatMap(child => {
+      const kept = filterItem(child);
+      return kept === undefined ? [] : [kept];
+    });
+    if (!matched && children.length === 0) return undefined;
+    return { ...item, ...(item.children === undefined ? {} : { children }) };
+  };
+  const groups = snapshot.groups.flatMap(group => {
+    if (mode === 'name' && matches(group.source.label)) return [group];
+    const items = group.items.flatMap(item => {
+      const kept = filterItem(item);
+      return kept === undefined ? [] : [kept];
+    });
+    return items.length === 0 ? [] : [{ ...group, items }];
+  });
+  return { snapshot: { ...snapshot, groups }, empty: groups.length === 0 };
+}
 
 /** One flattened list row derived from the snapshot hierarchy. */
 export type InjectionRow =

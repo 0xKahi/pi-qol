@@ -64,15 +64,17 @@ describe('ContextViewDialog', () => {
   test('opens truncated Usage blocks as nested full-content previews and restores block state', () => {
     const longUsage: ContextUsageSnapshot = {
       ...usage,
-      categories: [{
-        id: 'long',
-        label: 'Long',
-        tokens: 30,
-        entries: [
-          { breadcrumb: ['first'], tokens: 20, text: Array.from({ length: 30 }, (_, index) => `long line ${index + 1}`).join('\n') },
-          { breadcrumb: ['second'], tokens: 10, text: 'complete second block' },
-        ],
-      }],
+      categories: [
+        {
+          id: 'long',
+          label: 'Long',
+          tokens: 30,
+          entries: [
+            { breadcrumb: ['first'], tokens: 20, text: Array.from({ length: 30 }, (_, index) => `long line ${index + 1}`).join('\n') },
+            { breadcrumb: ['second'], tokens: 10, text: 'complete second block' },
+          ],
+        },
+      ],
       estimatedTokens: 30,
     };
     const dialog = createDialog(40, 'inline', longUsage);
@@ -101,4 +103,36 @@ describe('ContextViewDialog', () => {
     dialog.handleInput('\t');
     expect(dialog.render(100).join('\n')).toContain('Two');
   });
+});
+
+test('Usage percent basis survives tab switches but resets on a new dialog', () => {
+  const dialog = createDialog(80);
+  expect(dialog.render(120).join('\n')).toContain('% of window');
+  dialog.handleInput('p');
+  expect(dialog.render(120).join('\n')).toContain('% of used');
+  dialog.handleInput('\t');
+  dialog.handleInput('\t');
+  expect(dialog.render(120).join('\n')).toContain('% of used');
+  expect(createDialog(80).render(120).join('\n')).toContain('% of window');
+});
+
+test('Usage copy uses the injected clipboard and presents results in the footer', async () => {
+  const copied: string[] = [];
+  const dialog = new ContextViewDialog(
+    { terminal: { rows: 80 }, requestRender: () => undefined } as never,
+    theme,
+    { matches: () => false } as never,
+    { usage, initial: buildSnapshot([], 'real-turn', new Date()) },
+    () => undefined,
+    'inline',
+    text => {
+      copied.push(text);
+    },
+  );
+  const height = dialog.render(120).length;
+  dialog.handleInput('y');
+  await Bun.sleep(0);
+  expect(copied).toEqual(['first']);
+  expect(dialog.render(120).join('\n')).toContain('Copied 5 characters');
+  expect(dialog.render(120).length).toBe(height);
 });

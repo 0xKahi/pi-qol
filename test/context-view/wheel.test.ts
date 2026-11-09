@@ -1,53 +1,86 @@
-import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { expect, test } from 'bun:test';
+import type { Theme } from '@earendil-works/pi-coding-agent';
+import type { TuiMouseEvent } from '@earendil-works/pi-tui';
+import { buildSnapshot, type ContextUsageSnapshot } from '../../src/extensions/context-view/model';
+import { ContextViewDialog } from '../../src/extensions/context-view/ui/context-view-dialog';
+import { UsageBlockLayer } from '../../src/extensions/context-view/ui/usage-block-layer';
+import { UsageView } from '../../src/extensions/context-view/ui/usage-view';
 
-import type { TUI } from '@earendil-works/pi-tui';
-
-import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines } from '../../src/extensions/context-view/ui/wheel.ts';
-
-/** One X10 wheel report: `ESC [ M` plus offset-encoded button, column, and row bytes. */
-function x10Report(button: number, column: number, row: number): string {
-  return `\u001b[M${String.fromCharCode(button + 32, column + 33, row + 33)}`;
+const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as Theme;
+const entries = Array.from({ length: 6 }, (_, index) => ({ breadcrumb: [`block-${index}`], tokens: 10, text: `body-${index}` }));
+const usage: ContextUsageSnapshot = {
+  computedAt: new Date(),
+  estimatedTokens: 60,
+  reported: { tokens: 60, contextWindow: 1000 },
+  categories: entries.map((entry, index) => ({ id: `category-${index}`, label: `Category-${index}`, tokens: 10, entries: [entry] })),
+};
+function wheel(wheelDelta: number): TuiMouseEvent {
+  return {
+    type: 'wheel',
+    button: 'none',
+    x: 1,
+    y: 1,
+    screenX: 1,
+    screenY: 1,
+    width: 100,
+    height: 40,
+    shift: false,
+    alt: false,
+    ctrl: false,
+    wheelDelta,
+  };
 }
 
-/** Stand-in for the TUI object pi hands to a custom view, with an arbitrary wheel step. */
-function tuiWithWheelScrollLines(lines: unknown): TUI {
-  return { wheelScrollLines: lines } as unknown as TUI;
-}
-
-test('parseWheelDirection decodes vertical SGR and X10 notches only', () => {
-  assert.equal(parseWheelDirection('\u001b[<64;20;5M'), -1);
-  assert.equal(parseWheelDirection('\u001b[<65;20;5M'), 1);
-
-  // Modifier bits and the release form still describe a plain vertical notch.
-  assert.equal(parseWheelDirection('\u001b[<69;1;1M'), 1, 'shift + wheel down');
-  assert.equal(parseWheelDirection('\u001b[<80;1;1m'), -1, 'ctrl + wheel up');
-
-  assert.equal(parseWheelDirection(x10Report(64, 19, 4)), -1);
-  assert.equal(parseWheelDirection(x10Report(65, 19, 4)), 1);
-
-  // Horizontal notches, plain buttons, keys, and text are not vertical scrolling.
-  assert.equal(parseWheelDirection('\u001b[<66;20;5M'), undefined, 'wheel left');
-  assert.equal(parseWheelDirection('\u001b[<67;20;5M'), undefined, 'wheel right');
-  assert.equal(parseWheelDirection('\u001b[<0;20;5M'), undefined, 'left button press');
-  assert.equal(parseWheelDirection(x10Report(0, 19, 4)), undefined);
-  assert.equal(parseWheelDirection('\u001b[B'), undefined);
-  assert.equal(parseWheelDirection('j'), undefined);
-  assert.equal(parseWheelDirection(''), undefined);
-  assert.equal(parseWheelDirection('\u001b[<64;20;5M\u001b[<64;20;5M'), undefined, 'unsplit burst');
+test('normalized wheel amount moves Usage selection without scaling and clamps at bounds', () => {
+  const view = new UsageView(theme, { usage });
+  view.render(100, 40);
+  expect(view.handleMouse(wheel(3))).toEqual({ handled: true });
+  expect(view.render(100, 40).join('\n')).toContain('→ ■ Category-3');
+  view.handleMouse(wheel(-2));
+  expect(view.render(100, 40).join('\n')).toContain('→ ■ Category-1');
+  view.handleMouse(wheel(100));
+  expect(view.render(100, 40).join('\n')).toContain('→ ■ Category-5');
+  expect(view.handleMouse({ ...wheel(0), type: 'move' })).toBeUndefined();
+  view.handleInput('\x1b[<64;1;1M');
+  expect(view.render(100, 40).join('\n')).toContain('→ ■ Category-5');
 });
 
-test("readWheelScrollLines honors pi's own step and falls back when it is unreadable", () => {
-  assert.equal(DEFAULT_WHEEL_SCROLL_LINES, 3);
-  assert.equal(readWheelScrollLines(tuiWithWheelScrollLines(4)), 4);
-  assert.equal(readWheelScrollLines(tuiWithWheelScrollLines(1)), 1);
-  assert.equal(readWheelScrollLines(tuiWithWheelScrollLines(2.7)), 2);
+test('normalized wheel amount steps block stream and consumes even boundary events', () => {
+  const layer = new UsageBlockLayer(theme, {
+    title: 'Blocks',
+    entries,
+    entryHeader: entry => entry.breadcrumb[0] ?? '',
+    entryBody: entry => [entry.text],
+    openFullContent: () => undefined,
+  });
+  layer.render(100, 40);
+  expect(layer.handleMouse(wheel(3))).toEqual({ handled: true });
+  expect(layer.render(100, 40).join('\n')).toContain('→ block-3');
+  layer.handleMouse(wheel(-2));
+  expect(layer.render(100, 40).join('\n')).toContain('→ block-1');
+  expect(layer.handleMouse(wheel(-100))).toEqual({ handled: true });
+  expect(layer.render(100, 40).join('\n')).toContain('→ block-0');
+  expect(layer.handleMouse({ ...wheel(0), type: 'click' })).toBeUndefined();
+});
 
-  // A pi without the private field, or with an unusable value, must not scroll by zero or backwards.
-  assert.equal(readWheelScrollLines(tuiWithWheelScrollLines(undefined)), DEFAULT_WHEEL_SCROLL_LINES);
-  assert.equal(readWheelScrollLines(tuiWithWheelScrollLines('4')), DEFAULT_WHEEL_SCROLL_LINES);
-  assert.equal(readWheelScrollLines(tuiWithWheelScrollLines(Number.NaN)), DEFAULT_WHEEL_SCROLL_LINES);
-  assert.equal(readWheelScrollLines(tuiWithWheelScrollLines(Number.POSITIVE_INFINITY)), DEFAULT_WHEEL_SCROLL_LINES);
-  assert.equal(readWheelScrollLines(tuiWithWheelScrollLines(0)), 1);
-  assert.equal(readWheelScrollLines(tuiWithWheelScrollLines(-3)), 1);
+test('ContextViewDialog forwards host wheel input to active Usage then its top block layer', () => {
+  const dialog = new ContextViewDialog(
+    { terminal: { rows: 100 }, requestRender: () => undefined } as never,
+    theme,
+    { matches: () => false } as never,
+    {
+      usage: { ...usage, categories: [{ id: 'all', label: 'All', tokens: 60, entries }, ...usage.categories] },
+      initial: buildSnapshot([], 'real-turn', new Date()),
+    },
+    () => undefined,
+  );
+  dialog.render(100);
+  expect(dialog.handleMouse(wheel(2))).toEqual({ handled: true });
+  expect(dialog.render(100).join('\n')).toContain('→ ■ Category-1');
+  dialog.handleInput('g');
+  dialog.handleInput('g');
+  dialog.handleInput('\r');
+  dialog.render(100);
+  expect(dialog.handleMouse(wheel(3))).toEqual({ handled: true });
+  expect(dialog.render(100).join('\n')).toContain('→ [block-3]');
 });
