@@ -4,6 +4,8 @@ import {
   type ExtensionAPI,
   type ExtensionCommandContext,
   type ExtensionContext,
+  SettingsManager,
+  shouldCompact,
 } from '@earendil-works/pi-coding-agent';
 import {
   buildNativeSnapshot,
@@ -13,7 +15,9 @@ import {
   type InitialCaptureState,
   type SilentProbeState,
 } from './capture';
+import { VIRTUAL_MODEL_API } from './constants';
 import type { ContextUsageSnapshot, InitialSnapshot } from './model';
+import { canPresent } from './presentation';
 import { runWithProbeToken } from './probe-token';
 import { readAutoCompactReserveTokens } from './settings';
 import { computeUsage, toReportedUsage } from './usage';
@@ -30,12 +34,49 @@ type PromptContext = ExtensionContext & {
 };
 
 interface ContextViewDependencies {
+  autoProbing?: boolean;
+  readProbeSettings?: (
+    ctx: PromptContext,
+  ) => Pick<SettingsManager, 'getCacheWarmingMode' | 'getCompactionSettings'> & Partial<Pick<SettingsManager, 'drainErrors'>>;
   readAutoCompactReserveTokens?: (ctx: PromptContext) => number | undefined;
 }
 
 /** Read Pi's effective merged compaction reserve; optional settings never block the view. */
 function defaultReserveReader(ctx: PromptContext): number | undefined {
   return readAutoCompactReserveTokens(ctx as unknown as ExtensionCommandContext);
+}
+
+/** Ordered safety gates. A rejection never consumes the one probe attempt. */
+export async function checkProbeStartConditions(
+  ctx: PromptContext,
+  deps: ContextViewDependencies & { compaction: CompactionState },
+): Promise<'ok' | string> {
+  if (deps.autoProbing === false) return 'automatic probing is disabled';
+  if (!canPresent(ctx)) return 'TUI presentation is unavailable';
+  try {
+    if (ctx.waitForIdle) await ctx.waitForIdle();
+    else if (!ctx.isIdle()) return 'the agent is not idle and waiting for idle is unavailable';
+  } catch {
+    return 'waiting for idle failed';
+  }
+  if (deps.compaction.isActive) return 'context compaction is in progress';
+  if (ctx.hasPendingMessages()) return 'queued input is pending';
+  if (!ctx.model) return 'no model is selected';
+  if (ctx.model.api === VIRTUAL_MODEL_API) return 'a virtual model is selected';
+  if (!ctx.modelRegistry.hasConfiguredAuth(ctx.model)) return `${ctx.model.provider} has no configured authentication`;
+  try {
+    const settings = deps.readProbeSettings?.(ctx) ?? SettingsManager.create(ctx.cwd, undefined, { projectTrusted: ctx.isProjectTrusted() });
+    if (settings.drainErrors?.().length) return 'settings unreadable';
+    if (settings.getCacheWarmingMode() === 'idle') return 'idle cache warming is enabled';
+    const compactionSettings = settings.getCompactionSettings(ctx.model);
+    const usage = ctx.getContextUsage();
+    if (usage?.tokens !== null && usage?.tokens !== undefined && shouldCompact(usage.tokens, usage.contextWindow, compactionSettings)) {
+      return 'usage is at the auto-compaction threshold';
+    }
+  } catch {
+    return 'settings unreadable';
+  }
+  return 'ok';
 }
 
 /** Prepare Context View data without requiring command-only APIs for event callers. */
@@ -50,21 +91,14 @@ export async function prepareContextViewData(
   let initial = capture.snapshot;
   let degradedReason: string | undefined;
 
-  // A frozen Initial never needs the agent to settle first: opening the view
-  // during a run must show the captured state immediately, unlike a probe.
+  // Frozen snapshots open immediately; only probing requires an idle session.
   if (!initial) {
-    if (ctx.waitForIdle) await ctx.waitForIdle();
+    const condition = await checkProbeStartConditions(ctx, { ...dependencies, compaction });
     initial = capture.snapshot;
-  }
-
-  if (!initial) {
-    if (compaction.isActive) {
-      degradedReason = 'Silent probe unavailable: context compaction is in progress. Extension additions were not observed.';
-    } else if (ctx.model === undefined) {
-      degradedReason = 'Silent probe unavailable: no model is selected. Extension additions were not observed.';
-    } else if (!ctx.modelRegistry.hasConfiguredAuth(ctx.model)) {
-      degradedReason = `Silent probe unavailable: ${ctx.model.provider} has no configured authentication. Extension additions were not observed.`;
-    } else {
+    // A real turn may have supplied the snapshot during the idle wait.
+    if (!initial && condition !== 'ok') {
+      degradedReason = `Silent probe unavailable: ${condition}. Extension additions were not observed.`;
+    } else if (!initial) {
       const attempt = probe.start();
       if (attempt.started) {
         ctx.ui.setWorkingVisible(false);

@@ -23,11 +23,11 @@ export interface PreviewLayerOptions {
 }
 
 export class PreviewLayer implements ModalLayer {
-  private readonly scroller = new PreviewScroller();
+  protected readonly scroller = new PreviewScroller();
 
   public constructor(
-    private readonly theme: Theme,
-    private readonly options: PreviewLayerOptions,
+    protected readonly theme: Theme,
+    protected readonly options: PreviewLayerOptions,
   ) {}
 
   public hints(): Hint[] {

@@ -1,10 +1,10 @@
 import type { KeybindingsManager, Theme } from '@earendil-works/pi-coding-agent';
-import type { Component, Focusable, TUI } from '@earendil-works/pi-tui';
+import type { Component, Focusable, TUI, TuiMouseEvent, TuiMouseEventResult } from '@earendil-works/pi-tui';
 import { ModalDialog, type ModalFrame, VimNavigationScheme } from '../../../libs/modal';
 import type { ContextUsageSnapshot, InitialSnapshot } from '../model';
+import type { Clipboard, CopyServices } from './copy';
 import { InjectionsView } from './injections-view';
 import { UsageView } from './usage-view';
-import { readWheelScrollLines } from './wheel';
 
 export type ContextViewTab = 'usage' | 'injections';
 
@@ -30,13 +30,16 @@ export class ContextViewDialog implements Component, Focusable {
     input: ContextViewDialogInput,
     done: (result: undefined) => void,
     frame: ModalFrame = 'inline',
+    clipboard?: Clipboard,
   ) {
-    const wheelScrollLines = readWheelScrollLines(tui);
+    // Views report copy results through the dialog's footer notice; the
+    // dialog is assigned below, before any view can handle input.
+    const copy: CopyServices = {
+      notices: { showNotice: (text, tone, ttlMs) => this.dialog.showNotice(text, tone, ttlMs) },
+      clipboard,
+    };
     this.dialog = new ModalDialog<undefined>(tui, theme, keybindings, {
-      tabs: [
-        new UsageView(theme, { usage: input.usage }, wheelScrollLines),
-        new InjectionsView(theme, { snapshot: input.initial }, wheelScrollLines),
-      ],
+      tabs: [new UsageView(theme, { usage: input.usage }, copy), new InjectionsView(theme, { snapshot: input.initial }, copy)],
       navigation: new VimNavigationScheme(),
       frame,
       height: 'half',
@@ -64,6 +67,10 @@ export class ContextViewDialog implements Component, Focusable {
 
   handleInput(data: string): void {
     this.dialog.handleInput(data);
+  }
+
+  handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    return this.dialog.handleMouse(event);
   }
 
   render(width: number): string[] {

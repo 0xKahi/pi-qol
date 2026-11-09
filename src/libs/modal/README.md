@@ -55,6 +55,7 @@ That's the whole job. The shell gives you: Esc-to-cancel, `↑↓`/PgUp/PgDn via
 └──────────────────────────────────────────────┘
 
 Input routing (first match wins):
+  0. capturesInput() is true     → raw key to top layer, else active tab
   1. Tab / Shift+Tab            → cycle tabs (wraps; scheme resets)
   2. navigation scheme          → semantic action:
        dismiss                  → pop active tab's top layer, else cancel dialog
@@ -215,11 +216,14 @@ await presentModal(ctx.ui, layout, (tui, theme, keybindings, done, frame) =>
 
 ## Behavior contract (what users can rely on)
 
+- **Input capture** — tabs and layers may implement `capturesInput?(): boolean`. While true, all raw keys (including Tab, j, q and Esc) go directly to that target's `handleInput`, before tab cycling or scheme mapping. Only its own `hints()` appear in the footer; it owns confirmation/cancellation and releasing capture.
+- **Mouse** — optional `handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined` receives pi-tui normalized events on the top layer, otherwise the active tab. The shell returns the result unchanged; a layer without a handler does not fall through to its tab. Wheel consumers use the host's `wheelDelta` without rescaling and return `{ handled: true }`.
+- **Transient notices** — `dialog.showNotice(text, tone, ttlMs)` replaces the footer hint line without adding height. `ModalNoticeTone` is `'success' | 'warning' | 'error'`. The newest notice wins; expiry restores hints and requests a render. These are independent of the persistent `notices` option above the content.
 - **Esc/q** closes the top preview layer first, then the dialog (`onComplete(cancelValue)`).
-- **Tab / Shift+Tab** cycles tabs even while a preview is open; every tab keeps its selection, scroll, zoom, and open layers.
+- **Tab / Shift+Tab** cycles tabs unless the active target captures input, even while a preview is open; every tab keeps its selection, scroll, zoom, and open layers.
 - **Tab labels are live** — return counts from a closure and the strip updates on the next render.
 - **`gg` chords never leak** across tab switches or layer push/pop (shell calls `scheme.reset()`).
-- **Filter + Vim don't mix** — a modal gets a text filter **or** a command-style scheme, never both (`j` can't mean "down" and "j"). No insert/normal modes; don't build one.
+- **Shared filter + Vim don't mix** — the shell-level `filter` is for picker schemes. A view-owned temporary filter/search prompt can use `capturesInput()` with Vim navigation, releasing capture when editing ends.
 - **Height 'half'** bounds the whole dialog to `floor(terminal.rows / 2)` lines including frame; tabs must render exactly the `height` they're given.
 
 ## API reference
@@ -244,7 +248,9 @@ await presentModal(ctx.ui, layout, (tui, theme, keybindings, done, frame) =>
 
 `extraHints?: Hint[] | (() => Hint[])` inserts footer hints before Esc.
 
-Methods: `complete(result)`, `setExtraHints(hints)`, `resetNavigation()`, `handleInput(data)`, `render(width)`, `invalidate()`, `focused`, `activeTab`, `activeIndex`.
+`PreviewLayer` exposes protected `scroller`, `theme`, and `options` for specialized subclasses; its default keyboard-only scrolling behavior is unchanged. Subclasses or wrappers can implement input capture and normalized mouse handling.
+
+Methods: `showNotice(text, tone, ttlMs)`, `handleMouse(event)`, `complete(result)`, `setExtraHints(hints)`, `resetNavigation()`, `handleInput(data)`, `render(width)`, `invalidate()`, `focused`, `activeTab`, `activeIndex`.
 
 ### `ListTab<T>` options
 

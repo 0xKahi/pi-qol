@@ -2,6 +2,24 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { Theme } from '@earendil-works/pi-coding-agent';
+import type { TuiMouseEvent } from '@earendil-works/pi-tui';
+import type { CopyServices } from '../../src/extensions/context-view/ui/copy';
+
+const copy: CopyServices = { notices: { showNotice() {} }, clipboard() {} };
+const wheel = (wheelDelta: number): TuiMouseEvent => ({
+  type: 'wheel',
+  button: 'none',
+  x: 0,
+  y: 0,
+  screenX: 0,
+  screenY: 0,
+  width: 120,
+  height: 40,
+  shift: false,
+  alt: false,
+  ctrl: false,
+  wheelDelta,
+});
 
 import type { InitialSnapshot, InjectionItem } from '../../src/extensions/context-view/model.ts';
 import { InjectionsView } from '../../src/extensions/context-view/ui/injections-view.ts';
@@ -64,13 +82,17 @@ const jsonItem = item('definition', 8, {
 });
 
 test('InjectionsView marks dropped and moved rows and explains both in its legend', () => {
-  const view = new InjectionsView(theme, {
-    snapshot: snapshot([
-      item('base', 10),
-      item('guidelines', 0, { label: 'Guidelines', dropped: true }),
-      item('tools', 9, { label: 'Available Tools', moved: true }),
-    ]),
-  });
+  const view = new InjectionsView(
+    theme,
+    {
+      snapshot: snapshot([
+        item('base', 10),
+        item('guidelines', 0, { label: 'Guidelines', dropped: true }),
+        item('tools', 9, { label: 'Available Tools', moved: true }),
+      ]),
+    },
+    copy,
+  );
   const text = view.render(120, 40).join('\n');
 
   assert.match(text, /Guidelines \.+ 0 · Dropped/);
@@ -81,17 +103,17 @@ test('InjectionsView marks dropped and moved rows and explains both in its legen
   assert.doesNotMatch(text, /- Highlighted parts/);
 });
 
-test('InjectionsView moves the selection one row per wheel notch', () => {
-  const view = new InjectionsView(theme, { snapshot: snapshot([item('base', 10), item('second', 5)]) });
+test('InjectionsView moves the selection by the normalized wheel delta', () => {
+  const view = new InjectionsView(theme, { snapshot: snapshot([item('base', 10), item('second', 5)]) }, copy);
   view.render(120, 40);
   const before = view.render(120, 40).find(line => line.includes('→'));
-  view.handleInput('\u001b[<65;1;1M');
+  assert.deepEqual(view.handleMouse(wheel(1)), { handled: true });
   const after = view.render(120, 40).find(line => line.includes('→'));
   assert.notEqual(after, before);
 });
 
 test('InjectionsView preview restores attributed references and expands JSON', () => {
-  const view = new InjectionsView(theme, { snapshot: snapshot([refItem, jsonItem]) });
+  const view = new InjectionsView(theme, { snapshot: snapshot([refItem, jsonItem]) }, copy);
   const layer = captureLayer(view);
   view.render(120, 40);
 
@@ -114,7 +136,7 @@ test('InjectionsView wheel scrolls a pushed preview instead of the list', () => 
     label: 'Long',
     text: Array.from({ length: 60 }, (_, index) => `line ${index}`).join('\n'),
   });
-  const view = new InjectionsView(theme, { snapshot: snapshot([long]) });
+  const view = new InjectionsView(theme, { snapshot: snapshot([long]) }, copy);
   const layer = captureLayer(view);
   view.render(120, 40);
   view.handleNavigation('step-forward');
@@ -122,17 +144,17 @@ test('InjectionsView wheel scrolls a pushed preview instead of the list', () => 
   const preview = layer();
   assert.ok(preview !== undefined);
   const first = preview.render(120, 20);
-  preview.handleInput('\u001b[<65;1;1M');
+  preview.handleMouse?.(wheel(3));
   const second = preview.render(120, 20);
   assert.notDeepEqual(second, first);
 });
 
-test('InjectionsView preview honors a configured host wheel step', () => {
+test('InjectionsView preview honors the delivered host wheel delta', () => {
   const long = item('long', 4, {
     label: 'Long',
     text: Array.from({ length: 60 }, (_, index) => `line-${index}`).join('\n'),
   });
-  const view = new InjectionsView(theme, { snapshot: snapshot([long]) }, 5);
+  const view = new InjectionsView(theme, { snapshot: snapshot([long]) }, copy);
   const layer = captureLayer(view);
   view.render(120, 20);
   view.handleNavigation('step-forward');
@@ -142,6 +164,131 @@ test('InjectionsView preview honors a configured host wheel step', () => {
 
   const firstContentLine = (lines: string[]) => lines.find(line => /line-\d+/.test(line)) ?? '';
   assert.match(firstContentLine(preview.render(120, 15)), /line-0/);
-  preview.handleInput('\u001b[<65;1;1M');
+  preview.handleMouse?.(wheel(5));
   assert.match(firstContentLine(preview.render(120, 15)), /line-5/);
+});
+
+test('Injections filter captures j/q, toggles mode, confirms, clears, and keeps exact height', () => {
+  const view = new InjectionsView(theme, { snapshot: snapshot([item('jq', 10, { text: 'special content' }), item('other', 5)]) }, copy);
+  assert.equal(view.render(100, 18).length, 18);
+  view.handleInput('/');
+  assert.equal(view.capturesInput(), true);
+  view.handleInput('j');
+  view.handleInput('q');
+  const text = view.render(100, 18).join('\n');
+  assert.match(text, /Filter \(Name\): jq/);
+  assert.doesNotMatch(text, /other/);
+  assert.equal(view.render(100, 18).length, 18);
+  view.handleInput('\t');
+  assert.match(view.render(100, 18).join('\n'), /No contributions match/);
+  assert.match(view.render(100, 18).join('\n'), /Filter \(Content\)/);
+  view.handleInput('\x1b[Z');
+  assert.match(view.render(100, 18).join('\n'), /Filter \(Name\)/);
+  view.handleInput('\r');
+  assert.equal(view.capturesInput(), false);
+  assert.match(view.render(100, 18).join('\n'), /Filter \(Name\): jq/);
+  view.handleInput('/');
+  view.handleInput('\x1b');
+  assert.equal(view.capturesInput(), false);
+  assert.match(view.render(100, 18).join('\n'), /other/);
+  assert.doesNotMatch(view.render(100, 18).join('\n'), /Filter \(/);
+  for (const height of [0, 1, 5, 18, 40]) {
+    assert.equal(view.render(100, height).length, height);
+    view.handleNavigation('last');
+    assert.equal(view.render(100, height).length, height);
+  }
+});
+
+test('Injections list copies selected raw item, filtered group, and preview full raw content', async () => {
+  const copied: string[] = [];
+  const services: CopyServices = {
+    clipboard: text => {
+      copied.push(text);
+    },
+    notices: { showNotice() {} },
+  };
+  const view = new InjectionsView(
+    theme,
+    { snapshot: snapshot([item('keep', 1, { text: 'raw keep' }), item('hidden', 1, { text: 'raw hidden' })]) },
+    services,
+  );
+  const getLayer = captureLayer(view);
+  view.render(100, 18);
+  view.handleInput('/');
+  view.handleInput('keep');
+  view.handleInput('\r');
+  view.handleInput('y'); // first visible row is its source group
+  await Promise.resolve();
+  assert.deepEqual(copied, ['raw keep']);
+  view.handleNavigation('step-forward');
+  view.handleInput('y');
+  view.handleNavigation('confirm');
+  const layer = getLayer();
+  assert.ok(layer);
+  layer.handleInput('y');
+  await Promise.resolve();
+  assert.deepEqual(copied, ['raw keep', 'raw keep', 'raw keep']);
+});
+
+test('empty filtered list clears copy selection and normalized wheels clamp selection', async () => {
+  const copied: string[] = [];
+  const notices: string[] = [];
+  const view = new InjectionsView(
+    theme,
+    { snapshot: snapshot([item('first', 1), item('second', 1), item('third', 1)]) },
+    {
+      clipboard: text => {
+        copied.push(text);
+      },
+      notices: {
+        showNotice: text => {
+          notices.push(text);
+        },
+      },
+    },
+  );
+  view.render(100, 20);
+  view.handleMouse(wheel(3));
+  assert.match(view.render(100, 20).find(line => line.includes('→')) ?? '', /third/);
+  view.handleMouse(wheel(-99));
+  assert.match(view.render(100, 20).find(line => line.includes('→')) ?? '', /pi/);
+  assert.equal(view.handleMouse({ ...wheel(0), type: 'move' }), undefined);
+  view.handleInput('/');
+  view.handleInput('absent');
+  view.handleInput('\r');
+  view.handleInput('y');
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(copied, []);
+  assert.deepEqual(notices, ['Nothing to copy']);
+  assert.equal(
+    view.render(100, 20).some(line => line.includes('→')),
+    false,
+  );
+});
+
+test('group copy retains intact aggregate raw text but excludes filtered-out children', async () => {
+  const copied: string[] = [];
+  const children = [item('keep-child', 1, { text: 'visible payload' }), item('hide-child', 1, { text: 'hidden payload' })];
+  const aggregate = item('aggregate', 2, { text: 'raw wrapper\nvisible payload\nhidden payload', children });
+  const view = new InjectionsView(
+    theme,
+    { snapshot: snapshot([aggregate]) },
+    {
+      clipboard: text => {
+        copied.push(text);
+      },
+      notices: { showNotice() {} },
+    },
+  );
+  view.render(100, 20);
+  view.handleInput('y');
+  await Promise.resolve();
+  assert.deepEqual(copied, [aggregate.text]);
+  view.handleInput('/');
+  view.handleInput('keep-child');
+  view.handleInput('\r');
+  view.handleInput('y');
+  await Promise.resolve();
+  assert.deepEqual(copied, [aggregate.text, 'visible payload']);
 });

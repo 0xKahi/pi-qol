@@ -266,12 +266,17 @@
     "context_view": {
       "default": {
         "enabled": false,
+        "auto_probing": true,
         "layout": "inline"
       },
       "type": "object",
       "properties": {
         "enabled": {
           "default": false,
+          "type": "boolean"
+        },
+        "auto_probing": {
+          "default": true,
           "type": "boolean"
         },
         "layout": {

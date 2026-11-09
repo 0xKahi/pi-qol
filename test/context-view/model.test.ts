@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { buildSnapshot, groupInjections, type InjectionItem, type InjectionKind } from '../../src/extensions/context-view/model.ts';
+import { analyzeSystemPrompt } from '../../src/extensions/context-view/measure.ts';
+import { buildSnapshot, extensionSource, groupInjections, type InjectionItem, type InjectionKind } from '../../src/extensions/context-view/model.ts';
 
 /** InjectionItem fixture with sizes derived from the token count. */
 function item(id: string, sourceId: string, sourceLabel: string, native: boolean, tokens: number, kind: InjectionKind = 'message'): InjectionItem {
@@ -16,6 +17,57 @@ function item(id: string, sourceId: string, sourceLabel: string, native: boolean
     text: id.repeat(tokens),
   };
 }
+
+test('path sources use distinct keys and shortest unique suffixes, including index files', () => {
+  const paths = ['/one/shared/index.ts', '/two/shared/index.js', '/extensions/standalone.ts'];
+  for (const source of ['local', 'auto', 'cli']) {
+    const snapshot = buildSnapshot(
+      paths.map((path, index) => ({
+        ...item(String(index), '', '', false, 1),
+        source: extensionSource(source, path),
+      })),
+      'real-turn',
+      new Date(),
+    );
+    assert.deepEqual(
+      snapshot.groups.map(group => group.source.id),
+      paths.map(path => `tool-source:${source}:${path}`),
+    );
+    assert.deepEqual(
+      snapshot.groups.map(group => group.source.label),
+      ['one/shared', 'two/shared', 'standalone.ts'],
+    );
+  }
+  assert.deepEqual(extensionSource('npm:package', '/tmp/index.ts'), { id: 'tool-source:npm:package', label: 'npm:package', native: false });
+});
+
+test('tool and prompt sources share path keys and resolved labels throughout the snapshot', () => {
+  const paths = ['/one/shared/index.ts', '/two/shared/index.ts'];
+  const tools = paths.map((path, index) => ({
+    name: `tool${index}`,
+    description: 'tool',
+    parametersJson: '{}',
+    guidelines: [],
+    source: 'local',
+    path,
+  }));
+  const prompt = `Base\nCurrent working directory: /tmp\n\nOwner ${paths[0]}\n\nOwner ${paths[1]}`;
+  const snapshot = buildSnapshot(
+    analyzeSystemPrompt(prompt, { cwd: '/tmp' }, tools, {
+      sources: paths.map((path, index) => ({ source: 'local', path, names: [`tool${index}`] })),
+    }),
+    'real-turn',
+    new Date(),
+  );
+  for (const [index, path] of paths.entries()) {
+    const group = snapshot.groups.find(group => group.source.id === `tool-source:local:${path}`);
+    assert.ok(group);
+    assert.equal(group.source.label, index === 0 ? 'one/shared' : 'two/shared');
+    assert.ok(group.items.some(item => item.kind === 'tool'));
+    assert.ok(group.items.some(item => item.kind === 'prompt-addition'));
+    assert.ok(group.items.every(item => item.source.label === group.source.label));
+  }
+});
 
 test('groupInjections creates hierarchy and totals in display order', () => {
   const groups = groupInjections([

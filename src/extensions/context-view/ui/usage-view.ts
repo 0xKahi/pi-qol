@@ -7,7 +7,7 @@
  * shared modal library; this tab owns only its content.
  */
 import type { Theme, ThemeColor } from '@earendil-works/pi-coding-agent';
-import { matchesKey, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
+import { matchesKey, type TuiMouseEvent, type TuiMouseEventResult, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 
 import {
   BODY_INDENT,
@@ -24,14 +24,14 @@ import {
 } from '../../../libs/modal';
 import type { ContextUsageSnapshot, JsonSpan, UsageCategory, UsagePreviewEntry } from '../model';
 import { collectPreviewEntries } from '../usage';
+import { type CopyServices, copyWithNotice } from './copy';
 import { normalizeInlineText, normalizePreviewText } from './injections-model';
 import { expandJsonSpan } from './json-preview';
+import { SearchablePreview } from './searchable-preview';
 import { previewBodyLines, previewLegendLines } from './section-preview';
 import { splitSkillPreview } from './skill-preview';
 import { UsageBlockLayer } from './usage-block-layer';
 import { buildUsageMap, calculateFitMapScale, DEFAULT_MAP_COLUMNS, DEFAULT_MAP_ROWS, type UsageMapCell } from './usage-map';
-import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection } from './wheel';
-import { WheelPreviewLayer } from './wheel-preview-layer';
 
 const USAGE_DESCRIPTION =
   'Estimated context for the next model request. ' + "Token counts are approximate and may differ from the provider's estimate.";
@@ -55,7 +55,7 @@ const COMPACTED_CELL = '▦';
 const BUFFER_CELL = '⛝';
 const FREE_CELL = '⛶';
 const BREAKDOWN_MARKER = '•';
-/** Title and its trailing blank row the full-content wheel layer spends outside its body. */
+/** Title and its trailing blank row the full-content layer spends outside its body. */
 const FULL_CONTENT_FIXED_LINE_COUNT = 2;
 
 /** Everything the Usage view renders, classified once when the view opens. */
@@ -98,16 +98,19 @@ export class UsageView implements ModalTab {
   private readonly navigator: ListNavigator;
   private readonly cache = new RenderCache();
   private readonly fitMapScale: number | undefined;
-  private readonly wheelScrollLines: number;
+  private percentBasis: 'window' | 'used' = 'window';
   private context: ModalTabContext | undefined;
   private mapScale: UsageMapScale = 'window';
   private currentWidth: number | undefined;
 
   /** Create a view over one precomputed usage snapshot. */
-  public constructor(theme: Theme, input: UsageViewInput, wheelScrollLines: number = DEFAULT_WHEEL_SCROLL_LINES) {
+  public constructor(
+    theme: Theme,
+    input: UsageViewInput,
+    private readonly copy: CopyServices = { notices: { showNotice: () => undefined } },
+  ) {
     this.theme = theme;
     this.usage = input.usage;
-    this.wheelScrollLines = wheelScrollLines;
     this.legendRows = this.buildLegendRows();
     const selectableCount = this.legendRows.filter(row => row.type === 'category').length;
     this.navigator = new ListNavigator(this.legendRows.length, 1, selectableCount);
@@ -123,19 +126,42 @@ export class UsageView implements ModalTab {
   }
 
   public hints(): Hint[] {
-    const hints: Hint[] = [['Enter', 'Preview']];
+    const hints: Hint[] = [
+      ['Enter', 'Preview'],
+      ['y', 'Copy'],
+    ];
+    if (this.canTogglePercentBasis()) hints.push(['p', 'Percent basis']);
     if (this.canToggleMapScale(this.currentWidth)) hints.push(['Z', 'Zoom']);
     return hints;
   }
 
-  /** Handle the view-local map-zoom key; navigation arrives as actions and wheel steps the list. */
+  /** Handle view-local zoom, percentage basis, and copy bindings. */
   public handleInput(data: string): void {
-    const wheel = parseWheelDirection(data);
-    if (wheel !== undefined) {
-      if (this.navigator.moveBy(wheel)) this.cache.clear();
-      return;
-    }
     if (matchesKey(data, 'z')) this.toggleMapScale();
+    if (matchesKey(data, 'p') && this.canTogglePercentBasis()) {
+      this.percentBasis = this.percentBasis === 'window' ? 'used' : 'window';
+      this.cache.clear();
+    }
+    if (matchesKey(data, 'y')) {
+      const row = this.legendRows[this.navigator.selected];
+      const text =
+        row?.type === 'category'
+          ? collectPreviewEntries(row.category)
+              .map(entry => entry.text)
+              .join('\n\n')
+          : '';
+      void copyWithNotice(this.copy, text);
+    }
+  }
+
+  public handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    if (event.type !== 'wheel') return undefined;
+    if (this.navigator.moveBy(event.wheelDelta ?? 0)) this.cache.clear();
+    return { handled: true };
+  }
+
+  private canTogglePercentBasis(): boolean {
+    return (this.usage.reported?.contextWindow ?? 0) > 0 || this.usage.estimatedTokens > 0;
   }
 
   /** Apply semantic movement in the category list, or open a preview layer. */
@@ -277,7 +303,7 @@ export class UsageView implements ModalTab {
     const viewport = calculateViewport(this.legendRows.length, rows, headerLineCount);
     this.navigator.setVisibleCount(viewport.visibleCount);
 
-    const heading = theme.fg('mdHeading', theme.bold('Category:'));
+    const heading = theme.fg('mdHeading', theme.bold(`Category (% of ${this.percentBasis}):`));
     const rowWidth = Math.max(1, width - CURSOR_COLUMN_WIDTH);
     const columns = this.legendColumns(rowWidth);
     const visibleRows: string[] = [];
@@ -314,8 +340,8 @@ export class UsageView implements ModalTab {
     if (reported === undefined) return this.theme.fg('muted', 'Context usage unavailable.');
     const contextWindow = formatTokens(reported.contextWindow);
     if (reported.tokens === undefined) {
-      const percent = formatPercent(this.usage.estimatedTokens / reported.contextWindow);
-      return this.theme.fg('text', `≈${formatTokens(this.usage.estimatedTokens)}/${contextWindow} (${percent})`);
+      const percent = reported.contextWindow > 0 ? ` (${formatPercent(this.usage.estimatedTokens / reported.contextWindow)})` : '';
+      return this.theme.fg('text', `≈${formatTokens(this.usage.estimatedTokens)}/${contextWindow}${percent}`);
     }
     const percent = reported.percent === undefined ? '' : ` (${formatPercent(reported.percent / 100)})`;
     return this.theme.fg('text', `${formatTokens(reported.tokens)}/${contextWindow}${percent}`);
@@ -354,7 +380,7 @@ export class UsageView implements ModalTab {
     const rows = this.legendRows;
     const labelWidth = Math.max(1, ...rows.map(row => this.plainLegendLabel(row).length));
     const tokenWidth = Math.max(1, ...rows.map(row => formatTokens(legendTokens(row)).length));
-    const percentWidth = Math.max(0, ...rows.map(row => this.plainLegendPercent(legendTokens(row)).length));
+    const percentWidth = Math.max(0, ...rows.map(row => this.legendPercent(row).length));
     const rightWidth = tokenWidth + (percentWidth > 0 ? LEGEND_VALUE_GAP + percentWidth : 0);
     const idealValue = Math.min(MAX_LEGEND_VALUE_COLUMN, labelWidth + LEGEND_LEADER_GAP);
     return {
@@ -371,7 +397,7 @@ export class UsageView implements ModalTab {
     const tokens = formatTokens(legendTokens(row));
     const valueColor = selected ? 'accent' : row.type === 'category' && row.depth > 1 ? 'dim' : 'muted';
     const tokenPadding = ' '.repeat(Math.max(0, columns.tokenWidth - tokens.length));
-    const percent = this.plainLegendPercent(legendTokens(row));
+    const percent = this.legendPercent(row);
     const percentPart = percent === '' ? '' : `${' '.repeat(LEGEND_VALUE_GAP)}${this.theme.fg(selected ? 'accent' : 'dim', percent)}`;
     return fitLine(`${left}${leader}${this.theme.fg(valueColor, tokens)}${tokenPadding}${percentPart}`, width);
   }
@@ -406,10 +432,15 @@ export class UsageView implements ModalTab {
   }
 
   /** Percentage text used by the independently aligned rightmost column. */
+  private legendPercent(row: LegendRow): string {
+    if (this.percentBasis === 'used' && row.type !== 'category') return '';
+    return this.plainLegendPercent(legendTokens(row));
+  }
+
   private plainLegendPercent(tokens: number): string {
-    const contextWindow = this.usage.reported?.contextWindow;
-    if (contextWindow === undefined || contextWindow <= 0) return '';
-    return formatPercent(tokens / contextWindow);
+    const denominator = this.percentBasis === 'window' ? this.usage.reported?.contextWindow : this.usage.estimatedTokens;
+    if (denominator === undefined || denominator <= 0) return '';
+    return formatPercent(tokens / denominator);
   }
 
   /** Colored occupied/partial/buffer/free glyph for one map cell. */
@@ -434,6 +465,7 @@ export class UsageView implements ModalTab {
         title: () => this.theme.fg('accent', this.theme.bold(normalizeInlineText(row.category.label))),
         meta: () => this.theme.fg('muted', `${formatTokens(row.category.tokens)}${percent === '' ? '' : ` · ${percent}`}`),
         entries,
+        copy: this.copy,
         entryHeader: entry => this.entryHeader(entry),
         entryBody: (entry, width) => this.entryContentLines(entry, Math.max(10, width - BODY_INDENT.length * 2 - 1), compactSkills),
         description: (width, height) => this.previewDescriptionLines(width, height, row, entries),
@@ -446,13 +478,14 @@ export class UsageView implements ModalTab {
   private openFullContent(row: CategoryLegendRow, entry: UsagePreviewEntry, compactSkills: boolean): void {
     const breadcrumb = entry.breadcrumb.map(normalizeInlineText).filter(Boolean).join(' / ');
     this.context?.pushLayer(
-      new WheelPreviewLayer(this.theme, {
+      new SearchablePreview(this.theme, {
         title: () => this.theme.fg('accent', this.theme.bold(breadcrumb || normalizeInlineText(row.category.label))),
         meta: () => this.theme.fg('muted', formatTokens(entry.tokens)),
         // Match the block stream's two-column selection gutter so its hidden-line count stays exact.
         body: width => this.entryContentLines(entry, Math.max(10, width - BODY_INDENT.length * 2 - 3), compactSkills),
         description: (width, height) => this.fullContentLegendLines(width, height, entry, compactSkills),
-        wheelScrollLines: this.wheelScrollLines,
+        copy: this.copy,
+        copyText: () => entry.text,
       }),
     );
   }

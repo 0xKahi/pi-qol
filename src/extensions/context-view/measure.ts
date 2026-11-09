@@ -107,6 +107,7 @@ export interface ToolSlice {
   guidelines: string[];
   /** Provenance, e.g. "builtin" or "npm:pi-web-providers". */
   source: string;
+  path?: string;
 }
 
 /**
@@ -392,7 +393,7 @@ function measureTools(
     }
     const owner: InjectedOwner = {
       itemId: `tool:${tool.source}:${tool.name}`,
-      source: extensionSource(tool.source),
+      source: extensionSource(tool.source, tool.path),
       tool: tool.name,
     };
     collectDroppedReferences(dropped, droppedLines, owner);

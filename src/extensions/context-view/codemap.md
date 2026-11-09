@@ -30,6 +30,7 @@ Pure types shared by capture, measurement, and UI.
 - Injection types: `InjectionItem`, `InjectionGroup`, `InitialSnapshot`, `InjectionSource`, `InjectionKind`, `InjectionPhase`, `CaptureOrigin`.
 - Prompt-structure types: `TextSpan`, `JsonSpan`, `InjectedReference`, `InjectionSection`; items carry optional `sections`, `children`, `dropped`, `moved`, `jsonSpan`, `injectedReferences`, `requestOnly`, and `systemMessage` (`{ message: SystemMessage; index }`).
 - Usage types: `UsageCategory`, `UsagePreviewEntry`, `ContextUsageSnapshot`, `ReportedContextUsage`, `InvisibleReasoningEstimate`.
+- `extensionSource(source, path)` keys path-loaded `local`/`auto`/`cli` extensions as `tool-source:${source}:${path}`; prompt and tool sources share this keying. Snapshot labels use the shortest unique trailing path suffix after dropping `index.ts`/`index.js`; package labels remain unchanged.
 - `groupInjections()` / `buildSnapshot()`: group items by source with deterministic ordering (pi-native first, then extensions by size, aggregate last); items are copied to prevent later mutation.
 
 ### `transcript.ts` — System-message replay
@@ -75,14 +76,15 @@ Pure, deliberately heuristic attribution of text after pi's prompt footer.
 
 Stateful capture, compaction tracking, and the single allowed silent probe.
 
-- `InitialCaptureState`: `prepare()` (every `before_agent_start`, owning structured options and the handler-bounded prompt) and `finalize()` (first eligible `context` event). `snapshot` is frozen after the first successful finalization; `promptOptions` stays current for the controller fallback.
+- `InitialCaptureState`: `prepare()` (every `before_agent_start`, owning structured options and the handler-bounded prompt) and `finalize()` (first eligible `context_with_system` event). `snapshot` is frozen after the first successful finalization; `promptOptions` stays current for the controller fallback.
 - `CompactionState`: tracks `session_before_compact` until success/abort/settlement, gating whether a silent probe is safe.
-- `SilentProbeState`: owns the probe lifecycle (`idle → waiting → running → settled`), the correlation token, timeout, and exact synthetic `role + timestamp` identities. Restores persisted identities from `pi-context-view:probe-identities` custom session entries; sanitizes probe prompt/abort messages so the transcript shows no operation-aborted row.
+- `SilentProbeState`: owns the probe lifecycle (`idle → waiting → claimed → running → settled`), the correlation token, timeout, and exact synthetic `role + timestamp` identities. Restores persisted identities from `pi-context-view:probe-identities` custom session entries; sanitizes probe prompt/abort messages so the transcript shows no operation-aborted row.
 - `parsePersistedIdentities()`: defensive parse of persisted probe identities.
 - `buildNativeSnapshot()`: view-local pi-native snapshot without freezing the main capture state.
 - `buildUsageSnapshot()`: replays the branch's system messages plus frozen request-only system patches to measure the current prompt/tools.
 - `mergeRequestOnlyMessages()`: overlays frozen non-system request-only messages onto a current snapshot.
 - `copyPromptOptions()`, `collectPromptSources()`, `captureActiveTools()`, `measureInjectedMessages()`.
+- Active-tool measurement excludes `exposure === 'hidden'` and names in `systemPromptOptions.hiddenTools` (missing means empty), both during capture and in native/replayed controller fallbacks.
 
 ### `usage.ts` — Usage classification
 
@@ -108,7 +110,8 @@ Pure composition of the Usage view.
 
 Command/event data preparation and degraded native fallback.
 
-- `prepareContextViewData()`: waits for the agent to be idle, triggers the silent probe if no Initial snapshot exists, builds a current branch snapshot from `getSystemPromptOptions()` / `getSystemPrompt()` (replaying transcript state and merging request-only messages), reads the compaction reserve, and computes usage.
+- `prepareContextViewData()`: opens frozen snapshots immediately; otherwise checks probe safety and may trigger the silent probe. Builds a current branch snapshot from `getSystemPromptOptions()` / `getSystemPrompt()` (replaying transcript state and merging request-only messages), reads the compaction reserve, and computes usage.
+- `checkProbeStartConditions()` checks in order: `auto_probing`, `canPresent`, wait for idle (or verify idle if waiting is unavailable), compaction inactive, no pending input, selected model, non-virtual model, configured auth, then trusted merged settings readability, idle cache warming disabled, and usage below `shouldCompact` threshold. Settings errors block probing; unknown usage does not. Rejections do not consume the single attempt; reasons feed the degraded native fallback.
 - Returns `ContextViewData` with `initial`, `usage`, and optional `degradedReason`.
 
 ### `index.ts` — Registration, lifecycle, persistence
@@ -125,7 +128,8 @@ Wires the extension into `ExtensionAPI`.
   - `turn_start`: aborts the real turn when the probe owns the run.
   - `message_start`: records probe message identities.
   - `message_end`: sanitizes probe messages (blank prompt, empty successful stop for aborts).
-  - `context`: filters probe messages, finalizes the Initial snapshot.
+  - `context`: filters probe messages before later context handlers see them.
+  - `context_with_system`: observe-only finalization; returns nothing, locally re-filters probe messages, skips Pi's leading complete system prompt (already measured), and captures other system-role additions.
   - `agent_settled`: settles the probe and persists new identities.
   - `session_shutdown`: fails the probe and persists identities.
 - Command handler validates enabled flag, no arguments, and TUI mode before opening the dialog.
@@ -153,7 +157,7 @@ Stateful Usage tab (`ModalTab`).
 
 - Renders a proportional 14×14 context-window map (`UsageMap`), category legend, and reported/estimated summary within the shell-provided content height.
 - Map scale toggles between `window` (reported context window) and `fit` (115% headroom, rounded to 2 significant digits) with `z` when applicable.
-- Preview (Enter) pushes a `PreviewLayer` showing chronological content entries for the selected category; scrolling/paging/bounds are handled by the layer via shell navigation actions.
+- Preview (Enter) pushes a chronological `UsageBlockLayer`; truncated blocks open a complete-content `SearchablePreview`. `y` copies category entries or the selected block. `p` toggles category percentage basis between window and estimated used tokens, independently of map zoom; the summary stays window-based.
 - Handles invisible-reasoning metadata display in Agent Thinking Messages.
 - Caches rendered output via the library's `RenderCache` and invalidates on theme/selection/scroll changes.
 
@@ -162,7 +166,8 @@ Stateful Usage tab (`ModalTab`).
 Stateful Injections tab (`ModalTab`).
 
 - Renders the hierarchical Initial snapshot: groups (source), items, sub-items (children), and a non-selectable TOTAL row.
-- Preview (Enter) pushes a `PreviewLayer` showing the raw text of the selected injection item, with section subheaders, dropped/moved markers, JSON expansion, and injected prompt-line references.
+- `/` edits a Name/Content filter (Tab/Shift+Tab toggle mode, Enter confirms, Esc clears while editing); fixed-height rendering reserves a prompt/status row. `y` copies item text or filter-visible group content.
+- Preview (Enter) pushes a `SearchablePreview` showing the raw text of the selected injection item, with section subheaders, dropped/moved markers, JSON expansion, and injected prompt-line references.
 - Tree rendering uses `├─`/`└─`/`│` prefixes and a stable shared value column.
 - Currently only the `[INITIAL]` tab is rendered; `[Runtime]` is intentionally hidden until implemented.
 
@@ -193,10 +198,13 @@ Pure 14×14 proportional map model.
 - `ContextMarker` (`dropped`, `moved`, `guess`) with `MARKER_ORDER`.
 - `droppedMarker()` / `movedMarker()` / `guessMarker()` and `markerLegendLines()`: themed glyphs and legend for prompt-part provenance.
 
-### `ui/wheel.ts` / `ui/wheel-preview-layer.ts`
+### UI search, copy, and wheel input
 
-- `parseWheelDirection()` / `readWheelScrollLines()`: decode terminal wheel input and configured scroll lines.
-- `WheelPreviewLayer` (`ModalLayer`): a preview layer that scrolls on wheel events.
+- `ui/searchable-preview.ts`: injection/full-content preview layer with `/` search, Enter confirm, Esc clear while editing, wrapped `n/N` navigation, and `y` raw-content copy.
+- `ui/search.ts`: shared literal case-insensitive matching with normalized query whitespace; content filtering also normalizes target whitespace.
+- `ui/highlight.ts`: ANSI-safe visible-column match highlighting, distinguishing the current match.
+- `ui/copy.ts`: Pi clipboard adapter with normalization and transient success/empty/failure notices.
+- Wheel input uses `handleMouse` and host-normalized `wheelDelta` without rescaling. `wheel.ts` and `wheel-preview-layer.ts` were removed.
 
 ### `ui/section-preview.ts`
 
@@ -214,7 +222,7 @@ Preview-only recognition of pi `<skill name="...">` wrappers.
 1. `registerContextView()` waits for the first enabled `session_start`, then calls `activateContextView()`.
 2. `activateContextView()` restores any persisted probe identities from custom session entries.
 3. On `before_agent_start`, `capture.prepare()` saves owned prompt options and the handler-bounded prompt; `probe.beginRun()` claims the run by token.
-4. On `context`, `probe.filterMessages()` removes synthetic probe messages; the remaining messages are diffed against the session-branch baseline to identify request-only injections; `capture.finalize()` freezes the Initial snapshot.
+4. On `context`, `probe.filterMessages()` removes qualified synthetic messages. On `context_with_system`, an observe-only handler re-filters locally, omits Pi's leading complete prompt, diffs against the branch baseline, and freezes Initial with `capture.finalize()` without returning a replacement list.
 5. On `agent_settled`, the probe is settled and new identities are persisted to `pi-context-view:probe-identities`.
 6. When the user invokes `/context-view` or the Vim event, `prepareContextViewData()`:
    - waits for agent idle;
@@ -238,22 +246,22 @@ Preview-only recognition of pi `<skill name="...">` wrappers.
 ### SilentProbeState
 
 - `start()` → `idle → waiting`; creates a timeout; returns the existing completion on re-entry.
-- `isProbeInput(source, token)` with the matching token → the synthetic prompt is recognized.
-- `beginRun(token)` with the matching token → `waiting → running`; a token-less run fails the attempt without arming the abort guard.
-- `recordMessage()` / `sanitizeMessage()` → records identities and blanks probe prompt/abort messages.
+- `isProbeInput(source, token, streamingBehavior)` claims only a waiting, token-matched extension input with no streaming behavior (`waiting → claimed`). A second token-bearing input after claim fails as `nested-send` without aborting either run.
+- `beginRun(token, messageType)` requires a matching token and user run (`waiting/claimed → running`); foreign/custom runs fail as `foreign-run` without arming the abort guard. Only a successfully claimed running probe is aborted at `turn_start`.
+- `recordMessage()` records only the claimed run's first user message when empty and exact setup-abort assistant messages. Filtering/blanking requires both a recorded role/timestamp identity and qualifying content (empty user, or error-stop assistant with the exact setup-abort message), including restored identities; timestamp collisions cannot hide unrelated content.
 - `settle(captured)` → `running → settled`.
 - `fail(reason)` → resolves a pending attempt.
 - Identities are persisted only after settlement or shutdown.
 
 ### ContextViewDialog
 
-- `usage ↔ injections` via `Tab`/`Shift+Tab`, including while a preview layer is open.
+- `usage ↔ injections` via `Tab`/`Shift+Tab`, including with previews open, except while a target captures raw input for filter/search editing.
 - The active tab handles selection and scroll via navigation actions; Enter pushes a preview layer.
 - `Esc`/`q` pops the active tab's preview layer first, then closes the dialog.
 
 ## Integration Points
 
-- **Config**: `config-loader.isEnabled('context_view')` gates activation and command use; `config-loader.getContextView().layout` selects inline or overlay presentation (default `inline`).
+- **Config**: `config-loader.isEnabled('context_view')` gates activation and command use; `getContextView().layout` selects inline/overlay (default `inline`), and `auto_probing` (default `true`) controls only the silent initial-capture probe.
 - **ExtensionAPI**: `pi.on(...)`, `pi.registerCommand(...)`, `pi.events.on(...)`, `pi.appendEntry(...)`, `pi.getAllTools()`, `pi.getActiveTools()`, `pi.getCommands()`, `pi.sendUserMessage('')`.
 - **ExtensionContext**: `ctx.ui.custom<void>()`, `ctx.ui.notify()`, `ctx.abort()`, `ctx.getSystemPrompt()`, `ctx.getSystemPromptOptions()`, `ctx.getContextUsage()`, `ctx.waitForIdle()`, `ctx.mode`, `ctx.model`, `ctx.modelRegistry.hasConfiguredAuth()`, `ctx.sessionManager.getEntries()`, `ctx.sessionManager.getLeafId()`, `ctx.isProjectTrusted()`, `ctx.cwd`.
 - **Pi host runtime**: `buildSessionContext`, `convertToLlm`, `estimateTokens`, `formatSize`, `SettingsManager`, `SystemMessage`/`ContextEvent` types, `ToolInfo`/`SlashCommandInfo`/`SourceInfo`.
@@ -271,6 +279,6 @@ Preview-only recognition of pi `<skill name="...">` wrappers.
 - Captured prompt, tool, skill, context-file, and message content stays process-local and must never be logged or serialized.
 - Only synthetic probe `role + timestamp` identities may be persisted.
 - The silent probe is limited to one attempt per session; it aborts the real turn and cleans up the transcript.
-- The view requires TUI mode; it warns in non-TUI modes.
+- Requires Pi 0.87+ for `context_with_system`. `presentation.ts` exports `canPresent(ctx) = ctx.mode === 'tui' && ctx.hasUI`, shared by command/event presentation, capture preparation/finalization, and probe start; non-presentable hosts do not capture.
 - The command accepts no arguments.
 - `PageUp`/`PageDown`/`Home`/`End` are intentionally replaced by Vim bindings.

@@ -133,7 +133,8 @@ them (project overrides global):
   },
   "context_view": {
     "enabled": true,
-    "layout": "inline"
+    "layout": "inline",
+    "auto_probing": true
   },
   "custom_footer": {
     "enabled": true,
@@ -202,10 +203,18 @@ Duplicate favourite declarations remain first-entry-wins.
 | --------- | --------- | ------- | ----------- |
 | `enabled` | `boolean` | `false` | Enable the Context View capture and interface. |
 | `layout`  | `enum`    | `inline` | Context View presentation: `inline` or centered `overlay`. |
+| `auto_probing` | `boolean` | `true` | Turn the silent initial-capture probe on/off; ordinary turn capture remains enabled. |
 
 ### Context View
 
-Context View is a fork of Dmitry Makarov's [pi-context-view](https://github.com/dimk90/pi-context-view), adapted into one unified tabbed interface with Vim-friendly keybindings. Enable it, then run `/context-view` with no arguments. The Usage tab opens first; Tab and Shift+Tab switch between Usage and Injections. Use `j`/`k` or arrows to move, `Ctrl+u`/`Ctrl+d` to move by a page, `gg`/`G` to jump to the beginning/end, Enter to preview, and Esc or `q` to return or close. By default it opens inline; set `context_view.layout` to `overlay` for a centered overlay. Other extensions can open the same view by emitting `pi.vimKeys.event:pi-qol.context_view`.
+Context View is a fork of Dmitry Makarov's [pi-context-view](https://github.com/dimk90/pi-context-view), aligned with upstream v0.8.3 and adapted into one unified tabbed interface with Vim-friendly keybindings. **Context View requires Pi 0.87+** for system-inclusive capture. Enable it, then run `/context-view` with no arguments. The Usage tab opens first; Tab and Shift+Tab switch between Usage and Injections. Use `j`/`k` or arrows to move, `Ctrl+u`/`Ctrl+d` to move by a page, `gg`/`G` to jump to the beginning/end, Enter to preview, and Esc or `q` to return or close. By default it opens inline; set `context_view.layout` to `overlay` for a centered overlay. Other extensions can open the same view by emitting `pi.vimKeys.event:pi-qol.context_view`.
+
+#### Context View keys
+
+- **Injections filter**: `/` edits the filter; Tab/Shift+Tab toggles Name/Content mode while editing, Enter confirms, and Esc clears. Name matches retain subtrees; Content matches preview text. Matching is literal and case-insensitive.
+- **Preview search**: `/` searches rendered text in injection and complete-content previews; Enter confirms, then `n`/`N` moves to the next/previous match with wrap-around. Esc clears while editing. To clear a confirmed filter or search, press `/` then Esc; outside editing, Esc goes back/closes. The Usage block stream itself does not bind `/`.
+- **Copy**: `y` copies the selected injection item's raw text, a group's filter-visible content, a Usage category's chronological entries, the selected Usage block's full text, or the open preview's full raw content. Buffer/free rows have nothing to copy. Clipboard availability depends on the terminal/host; success, empty content, and failures produce a footer notice.
+- **Usage percentages**: `p` switches category percentages between share of the context **window** (default) and estimated context **used**, when either denominator is positive. Used mode omits buffer/free percentages; the summary always uses the window. This is independent of `z` map zoom.
 
 #### `custom_footer`
 

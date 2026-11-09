@@ -80,16 +80,16 @@ export interface SyntheticMessageIdentity {
 interface CapturePreparation {
   readonly promptOptions: PromptOptionsSlice;
   readonly toolSnippets?: Readonly<Record<string, string>>;
+  readonly hiddenTools?: readonly string[];
   /** Prompt as of this extension's own handler, bounding later extensions' additions. */
   readonly promptAtHandler?: string;
 }
 
 /**
- * Lifecycle of the single probe attempt. Ownership outlives the attempt's own
- * completion, so a probe run arriving after a timeout or after an unattributed
- * run is still claimed, aborted, and sanitized.
+ * Lifecycle of the single probe attempt. Failed claims release ownership so
+ * unrelated or nested runs can never arm the abort guard.
  */
-type ProbePhase = 'idle' | 'waiting' | 'running' | 'settled';
+type ProbePhase = 'idle' | 'waiting' | 'claimed' | 'running' | 'settled';
 
 /**
  * Capture-once state machine. `prepare()` refreshes the structured options on
@@ -123,6 +123,7 @@ export class InitialCaptureState {
     this.pendingPreparation = {
       promptOptions: copyPromptOptions(options),
       toolSnippets: options.toolSnippets === undefined ? undefined : { ...options.toolSnippets },
+      hiddenTools: options.hiddenTools?.slice(),
       promptAtHandler,
     };
   }
@@ -141,6 +142,7 @@ export class InitialCaptureState {
     const preparation = this.pendingPreparation;
     const tools = captureActiveTools(input.allTools, input.activeToolNames, {
       toolSnippets: preparation.toolSnippets,
+      hiddenTools: preparation.hiddenTools,
     });
     const items = [
       ...analyzeSystemPrompt(input.systemPrompt, preparation.promptOptions, tools, {
@@ -193,15 +195,24 @@ export class CompactionState {
  */
 export class SilentProbeState {
   private phase: ProbePhase = 'idle';
+  private recordedUser = false;
   private readonly identities = new Map<string, SyntheticMessageIdentity>();
   private attempt: ProbeAttempt | undefined;
   private resolveCompletion: ((outcome: ProbeOutcome) => void) | undefined;
   private outcome: ProbeOutcome | undefined;
   private timeout: NodeJS.Timeout | undefined;
 
-  /** True while the probe owns the in-flight agent run (including after a timeout). */
+  /** True only after a successful run claim, until settlement or failure. */
   public get isCurrentRun(): boolean {
     return this.phase === 'running';
+  }
+
+  public get isPending(): boolean {
+    return this.phase === 'waiting' || this.phase === 'claimed';
+  }
+
+  public ownsAttemptToken(token: ProbeToken | undefined): boolean {
+    return this.ownsToken(token);
   }
 
   /** Defensive copies of the recorded probe message identities. */
@@ -235,7 +246,7 @@ export class SilentProbeState {
       this.resolveCompletion = resolve;
     });
     this.timeout = setTimeout(() => {
-      this.resolve({ status: 'failed', reason: 'Silent probe timed out.' });
+      this.fail('Silent probe timed out (timeout).');
     }, timeoutMs);
     this.attempt = { started: true, token: createProbeToken(), completion };
     return this.attempt;
@@ -246,21 +257,30 @@ export class SilentProbeState {
    * is causal rather than textual: the token is visible only inside the async
    * context of this extension's own `sendUserMessage()` call.
    */
-  public isProbeInput(source: InputSource, token: ProbeToken | undefined): boolean {
-    return this.phase === 'waiting' && source === 'extension' && this.ownsToken(token);
+  public isProbeInput(source: InputSource, token: ProbeToken | undefined, streamingBehavior?: 'steer' | 'followUp'): boolean {
+    if (!this.ownsToken(token)) return false;
+    if (this.phase === 'claimed' || this.phase === 'running') {
+      this.fail('Silent probe failed (nested-send): the empty probe prompt may reach the model.');
+      return false;
+    }
+    if (this.phase !== 'waiting' || source !== 'extension' || streamingBehavior !== undefined) return false;
+    this.phase = 'claimed';
+    return true;
   }
 
   /**
    * Claim the run this probe started, identified by the token it carries. A run
    * without the token is not provably ours, so it fails the attempt instead of
-   * activating the abort guard: it may belong to the user or to another
-   * extension and must run untouched. Ownership stays open afterwards so a
-   * delayed probe run is still claimed.
+   * activating the abort guard: foreign runs and delayed sends stay untouched.
    */
-  public beginRun(token: ProbeToken | undefined): boolean {
-    if (this.phase !== 'waiting') return false;
-    if (!this.ownsToken(token)) {
-      this.fail('Another agent run started before the silent probe was recognized.');
+  public beginRun(token: ProbeToken | undefined, messageType: 'user' | 'custom' = 'user'): boolean {
+    if (this.phase === 'running') {
+      this.fail('Silent probe failed (foreign-run): another agent run started during the silent probe.');
+      return false;
+    }
+    if (this.phase !== 'waiting' && this.phase !== 'claimed') return false;
+    if (messageType !== 'user' || !this.ownsToken(token)) {
+      this.fail('Silent probe failed (foreign-run): another agent run started before the silent probe was recognized.');
       return false;
     }
     this.phase = 'running';
@@ -269,7 +289,12 @@ export class SilentProbeState {
 
   /** Record probe user/assistant identities as their message events arrive. */
   public recordMessage(message: ContextEvent['messages'][number]): void {
-    if (!this.isCurrentRun || (message.role !== 'user' && message.role !== 'assistant')) return;
+    if (!this.isCurrentRun) return;
+    if (message.role === 'user') {
+      if (this.recordedUser) return;
+      this.recordedUser = true;
+    }
+    if (!qualifiesProbeMessage(message)) return;
     const identity = { role: message.role, timestamp: message.timestamp } satisfies SyntheticMessageIdentity;
     this.identities.set(identityKey(identity), identity);
   }
@@ -280,7 +305,7 @@ export class SilentProbeState {
    * model contexts; blanking keeps them out of the transcript.
    */
   public sanitizeMessage(message: ContextEvent['messages'][number]): ContextEvent['messages'][number] | undefined {
-    if (!this.isCurrentRun) return undefined;
+    if (!qualifiesProbeMessage(message)) return undefined;
     if (message.role === 'user') return this.blankProbePrompt(message);
     if (message.role === 'assistant') return this.blankProbeAbort(message);
     return undefined;
@@ -290,7 +315,7 @@ export class SilentProbeState {
   public filterMessages(messages: ContextEvent['messages']): ContextEvent['messages'] {
     if (this.identities.size === 0) return messages;
     return messages.filter(message => {
-      if (message.role !== 'user' && message.role !== 'assistant') return true;
+      if (!qualifiesProbeMessage(message)) return true;
       return !this.identities.has(identityKey(message));
     });
   }
@@ -304,11 +329,11 @@ export class SilentProbeState {
   }
 
   /**
-   * End a pending attempt during shutdown or a synchronous startup failure.
-   * Ownership is untouched: only the attempt's own completion is resolved.
+   * End a pending attempt and release the abort guard.
    */
   public fail(reason: string): void {
     if (this.attempt === undefined) return;
+    this.phase = 'settled';
     this.resolve({ status: 'failed', reason });
   }
 
@@ -327,7 +352,7 @@ export class SilentProbeState {
    * setup as an error instead of the legacy aborted stop reason.
    */
   private blankProbeAbort(message: Extract<ContextEvent['messages'][number], { role: 'assistant' }>): ContextEvent['messages'][number] | undefined {
-    const isProbeAbort = message.stopReason === 'aborted' || (message.stopReason === 'error' && message.errorMessage === SETUP_ABORT_ERROR_MESSAGE);
+    const isProbeAbort = message.stopReason === 'error' && message.errorMessage === SETUP_ABORT_ERROR_MESSAGE;
     if (!isProbeAbort || !this.ownsMessage(message)) return undefined;
     return { ...message, content: [], stopReason: 'stop', errorMessage: undefined };
   }
@@ -402,18 +427,21 @@ export function buildUsageSnapshot(input: UsageSnapshotInput): InitialSnapshot {
   const state = replaySystemMessages([...input.messages, ...patches]);
   if (state === undefined) return mergeRequestOnlyMessages(buildNativeSnapshot(input), input.initial);
   const registered = new Map(input.allTools.map(tool => [tool.name, tool]));
-  const tools: ToolSlice[] = state.tools.map(tool => {
-    const metadata = registered.get(tool.name);
-    const snippetLine = state.sections.tools?.split('\n').find(line => line.startsWith(`- ${tool.name}: `));
-    return {
-      name: tool.name,
-      description: tool.description,
-      parametersJson: JSON.stringify(tool.parameters),
-      snippet: snippetLine?.slice(`- ${tool.name}: `.length),
-      guidelines: normalizeGuidelines(metadata?.promptGuidelines),
-      source: metadata?.sourceInfo.source ?? 'unattributed',
-    };
-  });
+  const tools: ToolSlice[] = state.tools
+    .filter(tool => registered.get(tool.name)?.exposure !== 'hidden' && !input.options.hiddenTools?.includes(tool.name))
+    .map(tool => {
+      const metadata = registered.get(tool.name);
+      const snippetLine = state.sections.tools?.split('\n').find(line => line.startsWith(`- ${tool.name}: `));
+      return {
+        name: tool.name,
+        description: tool.description,
+        parametersJson: JSON.stringify(tool.parameters),
+        snippet: snippetLine?.slice(`- ${tool.name}: `.length),
+        guidelines: normalizeGuidelines(metadata?.promptGuidelines),
+        source: metadata?.sourceInfo.source ?? 'unattributed',
+        path: metadata?.sourceInfo.path,
+      };
+    });
   const options = copyPromptOptions(input.options);
   const items = analyzeSystemPrompt(
     systemMessageText(state),
@@ -507,12 +535,12 @@ function addPromptSource(sources: Map<string, CollectedPromptSource>, sourceInfo
 export function captureActiveTools(
   allTools: readonly ToolInfo[],
   activeToolNames: readonly string[],
-  options: { readonly toolSnippets?: Readonly<Record<string, string>> },
+  options: { readonly toolSnippets?: Readonly<Record<string, string>>; readonly hiddenTools?: readonly string[] },
 ): ToolSlice[] {
   const byName = new Map(allTools.map(tool => [tool.name, tool]));
   return [...new Set(activeToolNames)]
     .map(name => byName.get(name))
-    .filter(tool => tool !== undefined)
+    .filter((tool): tool is ToolInfo => tool !== undefined && tool.exposure !== 'hidden' && !options.hiddenTools?.includes(tool.name))
     .map(tool => ({
       name: tool.name,
       description: tool.description,
@@ -520,6 +548,7 @@ export function captureActiveTools(
       snippet: options.toolSnippets?.[tool.name],
       guidelines: normalizeGuidelines(tool.promptGuidelines),
       source: tool.sourceInfo.source,
+      path: tool.sourceInfo.path,
     }));
 }
 
@@ -632,6 +661,16 @@ function imagePreviewBlock<Block extends { readonly type: string }>(block: Block
 /** Preview whose whole text is one serialized JSON document. */
 function serializedPreview(text: string): MessagePreview {
   return { text, jsonSpan: { start: 0, end: text.length } };
+}
+
+/** Identity alone is never sufficient: same-millisecond real messages must survive. */
+function qualifiesProbeMessage(
+  message: ContextEvent['messages'][number],
+): message is Extract<ContextEvent['messages'][number], { role: 'user' | 'assistant' }> {
+  if (message.role === 'user') {
+    return typeof message.content === 'string' ? message.content === '' : message.content.every(block => block.type === 'text' && block.text === '');
+  }
+  return message.role === 'assistant' && message.stopReason === 'error' && message.errorMessage === SETUP_ABORT_ERROR_MESSAGE;
 }
 
 /** Map key uniquely identifying one probe message by role and timestamp. */

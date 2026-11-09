@@ -5,6 +5,11 @@
  * directory can be copied unchanged into other Pi plugin projects.
  */
 
+import type { TuiMouseEvent, TuiMouseEventResult } from '@earendil-works/pi-tui';
+
+/** Tone for a transient footer notice. */
+export type ModalNoticeTone = 'success' | 'warning' | 'error';
+
 /** Semantic action produced by a navigation scheme for one key press. */
 export type NavigationAction = 'step-back' | 'step-forward' | 'page-back' | 'page-forward' | 'first' | 'last' | 'confirm' | 'dismiss';
 
@@ -31,6 +36,9 @@ export interface NavigationScheme {
 export interface ModalLayer {
   render(width: number, height: number | undefined): string[];
   handleInput(data: string): void;
+  /** Own raw keyboard input before tab cycling and navigation mapping. */
+  capturesInput?(): boolean;
+  handleMouse?(event: TuiMouseEvent): TuiMouseEventResult | undefined;
   handleNavigation(action: NavigationAction): void;
   hints(): Hint[];
   invalidate?(): void;
@@ -56,6 +64,9 @@ export interface ModalTab {
   render(width: number, height: number | undefined): string[];
   /** Raw keys the navigation scheme did not handle. */
   handleInput(data: string): void;
+  /** Own raw keyboard input before tab cycling and navigation mapping. */
+  capturesInput?(): boolean;
+  handleMouse?(event: TuiMouseEvent): TuiMouseEventResult | undefined;
   /** Semantic navigation; never includes `dismiss`. */
   handleNavigation(action: NavigationAction): void;
   /** Re-filter content when the dialog owns a shared filter input. */

@@ -5,6 +5,7 @@
  * implement content. See `types.ts` for the tab/layer/scheme contracts.
  *
  * Input routing order:
+ *   0. A capturing content target receives raw input directly.
  *   1. Tab/Shift+Tab cycles tabs (wrapping, scheme reset).
  *   2. The navigation scheme maps a key to a semantic action; `dismiss` pops
  *      the active tab's top layer, or completes the dialog with the cancel
@@ -14,11 +15,20 @@
  *      the active tab.
  */
 import type { KeybindingsManager, Theme } from '@earendil-works/pi-coding-agent';
-import { type Component, type Focusable, Input, Key, matchesKey, type TUI } from '@earendil-works/pi-tui';
+import {
+  type Component,
+  type Focusable,
+  Input,
+  Key,
+  matchesKey,
+  type TUI,
+  type TuiMouseEvent,
+  type TuiMouseEventResult,
+} from '@earendil-works/pi-tui';
 import { PiKeybindingsScheme } from './navigation/pi-scheme';
 import { renderTabStrip } from './tab-strip';
 import { fitToTerminalHeight, hintRow, normalizeTerminalRows, padLine, singleLine } from './text';
-import type { Hint, ModalLayer, ModalTab, NavigationScheme } from './types';
+import type { Hint, ModalLayer, ModalNoticeTone, ModalTab, NavigationScheme } from './types';
 
 /** Framing style: inline rules, or a rounded border for host-centered overlays. */
 export type ModalFrame = 'inline' | 'bordered' | 'none';
@@ -61,6 +71,9 @@ export class ModalDialog<TResult> implements Component, Focusable {
   private readonly layerStacks = new Map<ModalTab, ModalLayer[]>();
   private activeTabIndex: number;
   private _focused = false;
+  private notice: { text: string; tone: ModalNoticeTone } | undefined;
+  private noticeGeneration = 0;
+  private noticeTimer: ReturnType<typeof setTimeout> | undefined;
   private extraHints: Hint[] | (() => Hint[]);
 
   public constructor(
@@ -130,7 +143,33 @@ export class ModalDialog<TResult> implements Component, Focusable {
     this.scheme.reset();
   }
 
+  /** Replace the footer hints temporarily without changing the dialog height. */
+  public showNotice(text: string, tone: ModalNoticeTone, ttlMs: number): void {
+    const generation = ++this.noticeGeneration;
+    clearTimeout(this.noticeTimer);
+    this.notice = { text, tone };
+    this.noticeTimer = setTimeout(() => {
+      if (generation !== this.noticeGeneration) return;
+      this.notice = undefined;
+      this.noticeTimer = undefined;
+      this.tui.requestRender();
+    }, ttlMs);
+    this.noticeTimer.unref?.();
+    this.tui.requestRender();
+  }
+
+  public handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    return this.content().handleMouse?.(event);
+  }
+
   public handleInput(data: string): void {
+    const target = this.content();
+    if (target.capturesInput?.()) {
+      this.scheme.reset();
+      target.handleInput(data);
+      this.tui.requestRender();
+      return;
+    }
     if (this.options.tabs.length > 1) {
       if (matchesKey(data, Key.shift('tab'))) {
         this.switchTab(-1);
@@ -266,7 +305,8 @@ export class ModalDialog<TResult> implements Component, Focusable {
     }
     lines.push(...content, '');
 
-    lines.push(singleLine(hintRow(this.theme, this.footerHints()), width));
+    const footer = this.notice === undefined ? hintRow(this.theme, this.footerHints()) : this.theme.fg(this.notice.tone, this.notice.text);
+    lines.push(singleLine(footer, width));
     return lines;
   }
 
@@ -302,6 +342,7 @@ export class ModalDialog<TResult> implements Component, Focusable {
   private footerHints(): Hint[] {
     const layer = this.topLayer();
     const target = layer ?? this.activeTab;
+    if (target.capturesInput?.()) return target.hints();
     const hints: Hint[] = [...this.scheme.hints(layer === undefined ? 'Navigate' : 'Scroll'), ...target.hints()];
     if (this.options.tabs.length > 1) hints.push(['Tab', 'Switch']);
     hints.push(...(typeof this.extraHints === 'function' ? this.extraHints() : this.extraHints));

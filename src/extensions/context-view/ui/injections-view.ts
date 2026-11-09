@@ -6,11 +6,10 @@
  * by the shared modal library; this tab owns only its content.
  */
 import type { Theme } from '@earendil-works/pi-coding-agent';
-import { visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
+import { Input, Key, matchesKey, type TuiMouseEvent, type TuiMouseEventResult, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 
 import {
   BODY_INDENT,
-  calculateViewport,
   fitLine,
   type Hint,
   ListNavigator,
@@ -21,12 +20,20 @@ import {
   wrapDescriptionLines,
 } from '../../../libs/modal';
 import type { InitialSnapshot, InjectionItem } from '../model';
-import { buildInjectionRows, collectItemsById, type InjectionRow, normalizeInlineText, normalizePreviewText } from './injections-model';
+import { type CopyServices, copyWithNotice } from './copy';
+import {
+  buildInjectionRows,
+  collectItemsById,
+  filterInjections,
+  type InjectionFilterMode,
+  type InjectionRow,
+  normalizeInlineText,
+  normalizePreviewText,
+} from './injections-model';
 import { expandJsonSpan } from './json-preview';
 import { type ContextMarker, droppedMarker, markerLegendLines, movedMarker } from './markers';
+import { SearchablePreview } from './searchable-preview';
 import { previewBodyLines, previewLegendLines } from './section-preview';
-import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection } from './wheel';
-import { WheelPreviewLayer } from './wheel-preview-layer';
 
 const LIST_DESCRIPTION = 'Injections into the model context for the first turn, with token estimates.';
 const CURSOR_COLUMN_WIDTH = 2;
@@ -48,22 +55,33 @@ interface InjectionColumns {
 /** Stateful Injections tab retained by the Context View dialog. */
 export class InjectionsView implements ModalTab {
   private readonly theme: Theme;
-  private readonly rows: InjectionRow[];
+  private rows: InjectionRow[];
   private readonly navigator: ListNavigator;
   private readonly itemsById: Map<string, InjectionItem>;
   private readonly cache = new RenderCache();
-  private readonly wheelScrollLines: number;
+  private readonly snapshot: InitialSnapshot;
+  private filtered: InitialSnapshot;
+  private readonly filterInput = new Input({ prompt: '' });
+  private filterMode: InjectionFilterMode = 'name';
+  private editing = false;
+  private query = '';
+  private empty = false;
   private context: ModalTabContext | undefined;
   private previewItem: InjectionItem | undefined;
   private previewLines: string[] | undefined;
   private previewWrapWidth: number | undefined;
 
-  public constructor(theme: Theme, input: InjectionsViewInput, wheelScrollLines: number = DEFAULT_WHEEL_SCROLL_LINES) {
+  public constructor(
+    theme: Theme,
+    input: InjectionsViewInput,
+    private readonly copy: CopyServices,
+  ) {
     this.theme = theme;
     this.rows = buildInjectionRows(input.snapshot);
     this.navigator = new ListNavigator(this.rows.length, 1, this.rows.length - 2);
     this.itemsById = collectItemsById(input.snapshot);
-    this.wheelScrollLines = wheelScrollLines;
+    this.snapshot = input.snapshot;
+    this.filtered = input.snapshot;
   }
 
   public get label(): string {
@@ -74,14 +92,88 @@ export class InjectionsView implements ModalTab {
     this.context = context;
   }
 
-  public hints(): Hint[] {
-    return [['Enter', 'Preview']];
+  public capturesInput(): boolean {
+    return this.editing;
   }
 
-  /** One wheel notch steps the selection one row, like a single step key. */
+  public hints(): Hint[] {
+    return this.editing
+      ? [
+          ['Tab/Shift+Tab', 'Mode'],
+          ['Enter', 'Confirm'],
+          ['Esc', 'Clear'],
+        ]
+      : [
+          ['Enter', 'Preview'],
+          ['/', 'Filter'],
+          ['y', 'Copy'],
+        ];
+  }
+
   public handleInput(data: string): void {
-    const wheel = parseWheelDirection(data);
-    if (wheel !== undefined && this.navigator.moveBy(wheel)) this.cache.clear();
+    if (this.editing) {
+      if (matchesKey(data, Key.escape)) {
+        this.editing = false;
+        this.filterInput.focused = false;
+        this.query = '';
+        this.filterInput.setValue('');
+      } else if (matchesKey(data, Key.enter)) {
+        this.editing = false;
+        this.filterInput.focused = false;
+        this.cache.clear();
+        return;
+      } else if (matchesKey(data, Key.tab) || matchesKey(data, Key.shift('tab'))) {
+        this.filterMode = this.filterMode === 'name' ? 'content' : 'name';
+      } else {
+        this.filterInput.handleInput(data);
+        this.query = this.filterInput.getValue();
+      }
+      this.refreshFilter();
+    } else if (data === '/') {
+      this.editing = true;
+      this.filterInput.focused = true;
+      this.filterInput.setValue(this.query);
+      this.cache.clear();
+    } else if (data === 'y') {
+      void copyWithNotice(this.copy, this.selectedCopyText());
+    }
+  }
+
+  public handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    if (event.type !== 'wheel') return undefined;
+    if (this.navigator.moveBy(event.wheelDelta ?? 0)) this.cache.clear();
+    return { handled: true };
+  }
+
+  private refreshFilter(): void {
+    const result = filterInjections(this.snapshot, this.query, this.filterMode);
+    this.filtered = result.snapshot;
+    this.empty = result.empty;
+    this.rows = result.empty ? [] : buildInjectionRows(result.snapshot);
+    this.navigator.setRowCount(this.rows.length, Math.max(0, this.rows.length - 2));
+    this.navigator.moveTo(0);
+    this.cache.clear();
+  }
+
+  private selectedCopyText(): string {
+    const row = this.rows[this.navigator.selected];
+    if (row?.kind === 'item') return this.itemsById.get(row.itemId)?.text ?? '';
+    if (row?.kind !== 'group') return '';
+    // Source labels need not be unique, so identify the group by its row order.
+    const ordinal = this.rows.slice(0, this.navigator.selected).filter(entry => entry.kind === 'group').length;
+    const group = this.filtered.groups[ordinal];
+    const intact = (item: InjectionItem): boolean => {
+      const original = this.itemsById.get(item.id);
+      return (item.children?.length ?? 0) === (original?.children?.length ?? 0) && (item.children ?? []).every(intact);
+    };
+    const visibleText = (item: InjectionItem): string => {
+      // Aggregate text includes its children. Keep its exact raw payload when
+      // the subtree is intact; reconstruct only pruned aggregates so copying
+      // a filtered group cannot leak a hidden sibling's content.
+      if (item.children?.length && !intact(item)) return item.children.map(visibleText).join('\n\n');
+      return item.text;
+    };
+    return group?.items.map(visibleText).join('\n\n') ?? '';
   }
 
   /** Apply semantic movement in the hierarchy, or open an item preview. */
@@ -108,21 +200,25 @@ export class InjectionsView implements ModalTab {
     const cached = this.cache.read(width, height);
     if (cached !== undefined) return cached;
 
-    const terminalRows = height ?? this.rows.length + 10;
+    const terminalRows = Math.max(0, height ?? 24);
     const headerLines = this.headerLines(width);
     const descriptionLines = this.descriptionLines(width);
-    const viewport = calculateViewport(this.rows.length, terminalRows, headerLines.length + descriptionLines.length + 2);
-    this.navigator.setVisibleCount(viewport.visibleCount);
-
+    const filtering = this.editing || this.query.trim() !== '';
+    // Scroll and legend rows are accounted for even when blank. Filtering
+    // borrows one row from the padded list, never from the modal's height.
+    const fixed = headerLines.length + descriptionLines.length + 3 + (filtering ? 1 : 0);
+    const visibleCount = Math.max(0, terminalRows - fixed);
+    this.navigator.setVisibleCount(visibleCount);
+    const listLines = this.empty ? ['No contributions match'] : this.listLines(width).slice(0, visibleCount);
     const lines: string[] = [...headerLines, ''];
-    const listLines = this.listLines(width);
-    lines.push(...listLines);
-    if (viewport.showScroll) lines.push(this.scrollLine(width));
-    const paddingCount = viewport.visibleCount - listLines.length;
-    for (let pad = 0; pad < paddingCount; pad++) lines.push('');
-    lines.push('', ...descriptionLines);
-
-    return this.cache.write(width, height, lines);
+    if (filtering) {
+      const prefix = `Filter (${this.filterMode === 'name' ? 'Name' : 'Content'}): `;
+      lines.push(prefix + (this.editing ? (this.filterInput.render(Math.max(1, width - prefix.length))[0] ?? '') : this.query));
+    }
+    for (let index = 0; index < visibleCount; index++) lines.push(listLines[index] ?? '');
+    lines.push(this.scrollLine(width), '', ...descriptionLines);
+    const padded = Array.from({ length: terminalRows }, (_, index) => this.fit(lines[index] ?? '', width));
+    return this.cache.write(width, height, padded);
   }
 
   public invalidate(): void {
@@ -144,12 +240,13 @@ export class InjectionsView implements ModalTab {
     const source = normalizeInlineText(item.source.label);
     const marker = item.moved === true ? movedMarker(this.theme) : '';
     this.context?.pushLayer(
-      new WheelPreviewLayer(this.theme, {
+      new SearchablePreview(this.theme, {
         title: () => this.theme.fg('accent', this.theme.bold(normalizeInlineText(item.label))),
         meta: () => this.theme.fg('muted', `${source} · ${item.tokens.toLocaleString('en-US')} tokens`) + marker,
         body: width => this.getPreviewLines(width, item),
         description: (width, layerHeight) => this.previewLegendLines(width, layerHeight, item),
-        wheelScrollLines: this.wheelScrollLines,
+        copy: this.copy,
+        copyText: () => item.text,
       }),
     );
   }
