@@ -1,5 +1,11 @@
 # @0xkahi/pi-qol
 
+## 1.4.2
+
+### Patch Changes
+
+- bde4aef: ci: publish via npm trusted publishing
+
 ## 1.4.1
 
 ### Patch Changes
