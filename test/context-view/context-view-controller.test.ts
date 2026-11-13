@@ -185,7 +185,7 @@ describe('checkProbeStartConditions', () => {
     expect(
       await checkProbeStartConditions(ctx, {
         compaction: new CompactionState(),
-        readProbeSettings: () => SettingsManager.inMemory({ compaction: { enabled: false } }),
+        readProbeSettings: () => SettingsManager.inMemory({ cacheWarming: 'off', compaction: { enabled: false } }),
       }),
     ).toBe('ok');
   });
